@@ -1,0 +1,1214 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EpisodeFlow</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #EEF0F4; --panel: #FFFFFF; --raise: #F6F7FA; --line: #DDE1E8; --line-soft: #EAEDF2;
+  --text: #1B2030; --muted: #5E6677; --faint: #8D94A3;
+  --accent: #3A55D6; --accent-soft: #E3E8FC; --on-accent: #FFFFFF;
+  --warn: #A86F00; --warn-soft: #FFF2D6; --bad: #C2302C; --bad-soft: #FDE4E3;
+  --good: #1F8A4C; --special: #7D4CC2; --special-soft: #EFE6FB;
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #171A21; --panel: #1F232C; --raise: #262B36; --line: #343A47; --line-soft: #2A2F3A;
+    --text: #E5E8EF; --muted: #9BA2B2; --faint: #6E7586;
+    --accent: #8FA3FF; --accent-soft: #2A3157; --on-accent: #10142A;
+    --warn: #E9B54E; --warn-soft: #3A3020; --bad: #F07471; --bad-soft: #3F2427;
+    --good: #66CC92; --special: #C49CF4; --special-soft: #34284A;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--text); font: 14px/1.45 var(--font);
+  display: grid; grid-template-rows: auto 1fr; overflow: hidden; font-variant-numeric: tabular-nums;
+}
+html[dir=rtl] body { font-size: 14.5px; }
+button, input { font: inherit; color: inherit; }
+button {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 6px;
+  padding: 6px 14px; cursor: pointer; white-space: nowrap;
+}
+button:hover:not(:disabled) { background: var(--raise); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+button.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
+button.danger { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 600; }
+button:disabled { opacity: .45; cursor: default; }
+button.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+button.ghost:hover:not(:disabled) { background: var(--raise); color: var(--text); }
+button.small { padding: 3px 10px; font-size: 13px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type=text], input[type=number] { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+input[type=text]:focus, input[type=number]:focus { border-color: var(--accent); outline: none; }
+.fn { unicode-bidi: isolate; direction: ltr; }   /* file names always read left to right */
+html[dir=rtl] h1.fn, html[dir=rtl] p.fn { text-align: right; }
+.c-old > .fn, .c-new > .name, .h-files .fn, .dup label > .fn, .miss-text .fn { display: inline-block; max-width: 100%; }
+
+/* ---------- top bar ---------- */
+.top { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.brand { font: 600 15px var(--font-display); letter-spacing: -.01em; margin-inline-end: 6px; display: flex; align-items: center; gap: 8px; direction: ltr; }
+.brand-mark { display: inline-flex; gap: 2px; }
+.brand-mark i { width: 5px; height: 14px; border-radius: 1.5px; background: var(--accent); display: block; }
+.brand-mark i:nth-child(2) { opacity: .65; } .brand-mark i:nth-child(3) { opacity: .35; }
+#pathForm { display: flex; gap: 8px; flex: 1; min-width: 0; }
+#path { flex: 1; min-width: 100px; direction: ltr; }
+html[dir=rtl] #path { text-align: right; }
+.top-end { display: flex; gap: 2px; }
+
+/* ---------- layout ---------- */
+.body { display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
+.body.single { grid-template-columns: 1fr; }
+.body.single aside { display: none; }
+aside { border-inline-end: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+.side-head { padding: 14px 16px 8px; color: var(--muted); font-size: 13px; }
+#showList { list-style: none; margin: 0; padding: 0 8px; overflow: auto; flex: 1; }
+#showList li button {
+  width: 100%; text-align: start; border: 0; background: transparent; border-radius: 6px;
+  padding: 8px 10px; display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: center;
+}
+#showList li button:hover { background: var(--raise); }
+#showList li button[aria-current="true"] { background: var(--accent-soft); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.st-ready .dot { background: var(--good); } .st-review .dot { background: var(--warn); }
+.st-conflict .dot, .st-error .dot { background: var(--bad); } .st-done .dot { background: transparent; border: 1.5px solid var(--faint); }
+.st-analyzing .dot, .st-waiting .dot { animation: pulse 1s ease-in-out infinite alternate; }
+@keyframes pulse { to { opacity: .25; } }
+.show-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.show-state { color: var(--muted); font-size: 12px; }
+.side-tools { padding: 0 16px 10px; }
+.side-tools .icon-btn { width: 100%; justify-content: center; }
+.icon-btn { display: inline-flex; align-items: center; gap: 7px; }
+.icon-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linejoin: round; flex: none; }
+.icon-btn.has { color: var(--muted); }
+.side-foot { padding: 12px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+.side-foot p { margin: 0; font-size: 12px; color: var(--muted); }
+
+main { overflow: auto; min-height: 0; display: flex; flex-direction: column; }
+.wrap { padding: 22px 28px 0; max-width: 1180px; width: 100%; }
+
+/* ---------- show header ---------- */
+.head { display: flex; gap: 18px; align-items: flex-start; }
+.cover { width: 64px; height: 90px; border-radius: 6px; object-fit: cover; flex: none; background: var(--raise); border: 1px solid var(--line); }
+.head-text { min-width: 0; flex: 1; }
+h1 { font: 600 28px/1.15 var(--font-display); letter-spacing: -.02em; margin: 0 0 4px; overflow-wrap: anywhere; }
+html[dir=rtl] h1 { letter-spacing: 0; }
+.folder { color: var(--faint); font-size: 12px; margin: 0; overflow-wrap: anywhere; }
+.match { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+.match b { color: var(--text); font-weight: 600; }
+.match.warn { color: var(--warn); }
+.head-tools { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+.head-tools .done { font-size: 12px; color: var(--good); }
+
+/* ---------- episode tape ---------- */
+.tape { margin: 20px 0 6px; display: grid; gap: 14px; }
+.season { display: grid; grid-template-columns: 120px 1fr; gap: 14px; align-items: start; }
+.s-label b { display: block; font-weight: 600; }
+.s-label span { display: block; color: var(--muted); font-size: 12px; }
+.s-label .src { color: var(--faint); font-size: 11px; }
+.cells { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; direction: ltr; }
+html[dir=rtl] .cells { justify-content: flex-end; flex-direction: row; }
+.cell {
+  min-width: 26px; padding: 0 3px; height: 26px; border-radius: 4px; display: grid; place-items: center;
+  font-size: 11px; font-weight: 600; user-select: none; background: var(--accent); color: var(--on-accent);
+}
+.cell.have { cursor: pointer; }
+.cell.have:hover { filter: brightness(1.12); }
+.cell.miss { background: transparent; color: var(--faint); border: 1.5px dashed var(--line); font-weight: 400; }
+.cell.flag { background: var(--warn); color: #1b1300; }
+.cell.bad { background: var(--bad); color: #fff; }
+.cell.sp { background: var(--special); color: #1d0f33; }
+.part-gap { width: 12px; height: 26px; position: relative; }
+.part-gap::after { content: ""; position: absolute; left: 5px; top: 2px; bottom: 2px; width: 2px; border-radius: 1px; background: var(--line); }
+.run-gap { color: var(--faint); font-size: 12px; padding: 0 8px; height: 26px; display: inline-flex; align-items: center; gap: 6px; }
+.run-gap::before, .run-gap::after { content: ""; width: 18px; border-top: 1.5px dashed var(--line); }
+.miss-text { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+
+/* ---------- duplicates ---------- */
+.dups { margin: 18px 0 0; border: 1px solid color-mix(in srgb, var(--bad) 45%, var(--line)); border-radius: 8px; background: var(--panel); }
+.dups-head { padding: 12px 14px 4px; }
+.dups-head b { font-weight: 600; }
+.dups-head p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.dup { padding: 10px 14px 12px; border-top: 1px solid var(--line-soft); }
+.dup:first-of-type { border-top: 0; }
+.dup-code { font-weight: 600; margin-bottom: 6px; direction: ltr; unicode-bidi: isolate; display: inline-block; }
+.dup label { display: grid; grid-template-columns: 18px 1fr auto auto; gap: 10px; align-items: center; padding: 5px 0; cursor: pointer; }
+.dup .q { font-size: 12px; color: var(--muted); min-width: 56px; text-align: end; }
+.dup .best { font-size: 12px; color: var(--good); }
+.dup-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.dups-foot { padding: 0 14px 12px; color: var(--faint); font-size: 12px; margin: 0; }
+
+/* ---------- file table ---------- */
+.list { margin: 18px 0 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
+.list-head, .row { display: grid; grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr) 100px; gap: 12px; padding: 9px 14px; align-items: start; }
+.list-head { color: var(--muted); font-size: 12px; background: var(--raise); border-bottom: 1px solid var(--line); }
+.row { border-bottom: 1px solid var(--line-soft); cursor: pointer; position: relative; }
+.row:last-child { border-bottom: 0; }
+.row:hover { background: var(--raise); }
+.row::before { content: ""; position: absolute; inset-inline-start: 0; top: 0; bottom: 0; width: 3px; }
+.row.m-review::before { background: var(--warn); }
+.row.m-conflict::before { background: var(--bad); }
+.row.m-conflict { background: color-mix(in srgb, var(--bad-soft) 55%, transparent); }
+.row.m-skip .c-old, .row.m-same .c-new { color: var(--faint); }
+.row.flash { animation: flash 1.2s ease-out; }
+@keyframes flash { from { background: var(--accent-soft); } }
+.c-old { color: var(--muted); overflow-wrap: anywhere; }
+.c-arrow { color: var(--faint); text-align: center; }
+.c-new { overflow-wrap: anywhere; }
+.c-new .name { font-weight: 600; }
+.c-new small, .c-old small { display: block; font-size: 12px; margin-top: 2px; font-weight: 400; }
+.note { color: var(--warn); } .m-conflict .note { color: var(--bad); } .m-skip .note, .m-same .note, .m-ok .note { color: var(--faint); }
+.info { color: var(--accent); }
+.subs { color: var(--faint); }
+.pill { justify-self: end; font-size: 12px; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
+.m-review .pill { background: var(--warn-soft); color: var(--warn); }
+.m-conflict .pill { background: var(--bad-soft); color: var(--bad); }
+.m-skip .pill, .m-same .pill { color: var(--faint); }
+.pill.sp { background: var(--special-soft); color: var(--special); }
+
+/* ---------- footer ---------- */
+.actions {
+  position: sticky; bottom: 0; margin-top: auto; padding: 12px 28px; display: flex; align-items: center; gap: 10px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-top: 1px solid var(--line);
+}
+.actions p { margin: 0; margin-inline-end: auto; color: var(--muted); }
+.actions p b { color: var(--text); }
+.spacer { height: 18px; }
+
+/* ---------- history ---------- */
+.hist { margin: 18px 0 0; display: grid; gap: 10px; }
+.h-item { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 12px 14px; }
+.h-top { display: flex; gap: 12px; align-items: baseline; }
+.h-top b { font-weight: 600; }
+.h-top .when { color: var(--faint); font-size: 12px; direction: ltr; unicode-bidi: isolate; }
+.h-top .act { margin-inline-start: auto; display: flex; gap: 8px; align-items: center; }
+.h-top .tag { font-size: 12px; color: var(--faint); }
+.h-what { color: var(--muted); font-size: 13px; margin: 2px 0 6px; }
+.h-files { margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); display: grid; gap: 2px; }
+.h-files li { overflow-wrap: anywhere; }
+.h-item.undone { opacity: .6; }
+
+/* ---------- settings ---------- */
+.set-block { margin: 20px 0 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 16px 18px; max-width: 720px; }
+.set-block h2 { font: 600 16px var(--font-display); margin: 0 0 2px; }
+.set-block > p { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+.tpl { display: grid; grid-template-columns: 18px 1fr; gap: 10px; align-items: center; padding: 7px 0; cursor: pointer; }
+.tpl .ex { font-weight: 600; }
+.tpl .code { color: var(--faint); font-size: 12px; display: block; font-weight: 400; }
+.tpl input[type=text] { width: 100%; }
+.tpl-help { font-size: 12px; color: var(--faint); margin: 8px 0 0 28px; }
+html[dir=rtl] .tpl-help { margin: 8px 28px 0 0; }
+.tpl-warn { color: var(--warn); font-size: 12px; margin: 8px 0 0; min-height: 1em; }
+.set-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+
+.set-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.set-row label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.credits { font-size: 13px; color: var(--muted); margin: 0 0 6px; }
+.credits a, .link { color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.danger-text { color: var(--bad); }
+.banner { margin: 14px 28px 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap; max-width: 1124px; }
+.banner p { margin: 0; margin-inline-end: auto; }
+.banner p span { display: block; color: var(--muted); font-size: 13px; }
+
+/* ---------- storage ---------- */
+.st-total { font: 600 34px/1 var(--font-display); letter-spacing: -.02em; margin: 6px 0 2px; direction: ltr; unicode-bidi: isolate; display: inline-block; }
+.st-list { margin: 18px 0 0; display: grid; gap: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 6px; }
+.st-row { display: grid; grid-template-columns: minmax(120px, 220px) 1fr 84px; gap: 14px; align-items: center; padding: 8px 10px; border-radius: 6px; cursor: pointer; border: 0; background: transparent; text-align: start; width: 100%; }
+.st-row:hover { background: var(--raise); }
+.bar { height: 10px; border-radius: 5px; background: var(--line-soft); overflow: hidden; display: flex; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+.bar i + i { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+.bar i + i + i { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.st-size { text-align: end; color: var(--muted); font-size: 13px; direction: ltr; unicode-bidi: isolate; }
+.st-sub { margin: 22px 0 0; font: 600 15px var(--font-display); }
+.big-list { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.big-list li { display: grid; grid-template-columns: 1fr auto 84px; gap: 14px; padding: 6px 10px; font-size: 13px; border-radius: 6px; }
+.big-list li:nth-child(odd) { background: var(--panel); }
+.big-list .who { color: var(--faint); font-size: 12px; }
+.size-note { color: var(--faint); font-size: 12px; }
+
+/* ---------- empty / loading ---------- */
+.empty { margin: auto; text-align: center; max-width: 440px; padding: 40px 20px; }
+.empty h2 { font: 600 22px var(--font-display); margin: 18px 0 6px; }
+.empty p { color: var(--muted); margin: 0 0 18px; }
+.empty .demo { display: inline-flex; gap: 3px; direction: ltr; }
+.empty .demo i { width: 18px; height: 18px; border-radius: 3px; background: var(--accent); display: block; }
+.empty .demo i.m { background: transparent; border: 1.5px dashed var(--line); }
+.error-box { color: var(--bad); }
+
+/* ---------- dialogs ---------- */
+dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); padding: 22px 24px; width: min(470px, 92vw); box-shadow: 0 18px 50px rgba(0,0,0,.28); }
+dialog::backdrop { background: rgba(10, 12, 20, .45); }
+dialog h2 { font: 600 18px var(--font-display); margin: 0 0 4px; }
+dialog .file { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; margin: 0 0 16px; }
+.fields { display: flex; gap: 12px; }
+.fields label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); flex: 1; }
+.fields input { width: 100%; color: var(--text); }
+.hint { font-size: 12px; color: var(--faint); margin: 8px 0 14px; }
+.check { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+.shift { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.shift p { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+.shift .line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.shift input { width: 84px; }
+.dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+#confirm ul { margin: 10px 0 0; padding-inline-start: 18px; font-size: 12px; color: var(--muted); }
+#confirm p { margin: 6px 0 0; color: var(--muted); }
+
+#dropZone {
+  position: fixed; inset: 0; z-index: 50; display: none; place-items: center; pointer-events: none;
+  background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(3px);
+}
+#dropZone.on { display: grid; }
+#dropZone > div {
+  border: 2px dashed var(--accent); border-radius: 14px; padding: 36px 48px; text-align: center;
+  background: var(--panel); display: grid; gap: 14px; justify-items: center; font: 600 17px var(--font-display);
+}
+#dropZone .demo { display: inline-flex; gap: 3px; direction: ltr; }
+#dropZone .demo i { width: 16px; height: 16px; border-radius: 3px; background: var(--accent); display: block; }
+#dropZone .demo i.m { background: transparent; border: 1.5px dashed var(--line); }
+#toast {
+  position: fixed; left: 50%; bottom: 76px; transform: translateX(-50%) translateY(10px); opacity: 0; pointer-events: none;
+  background: var(--text); color: var(--bg); padding: 9px 10px 9px 16px; border-radius: 8px; display: flex; gap: 12px; align-items: center;
+  transition: opacity .18s, transform .18s; box-shadow: 0 8px 30px rgba(0,0,0,.25); max-width: 80vw;
+}
+#toast.show { opacity: 1; transform: translateX(-50%); pointer-events: auto; }
+#toast button { background: transparent; border-color: color-mix(in srgb, var(--bg) 40%, transparent); color: var(--bg); padding: 3px 10px; }
+@media (prefers-reduced-motion: reduce) { *, *::after { animation: none !important; transition: none !important; } }
+@media (max-width: 760px) {
+  .body { grid-template-columns: 1fr; } aside { display: none; }
+  .list-head, .row { grid-template-columns: 1fr; gap: 2px; } .c-arrow, .list-head { display: none; } .pill { justify-self: start; }
+  .season { grid-template-columns: 1fr; gap: 6px; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>EpisodeFlow</div>
+  <form id="pathForm" autocomplete="off">
+    <input id="path" type="text" spellcheck="false" data-i18n-ph="path_ph" data-i18n-label="path_ph">
+    <button type="button" id="browse" data-i18n="choose"></button>
+  </form>
+  <div class="top-end">
+    <button type="button" id="reload" class="ghost" data-i18n="reload"></button>
+    <button type="button" id="historyBtn" class="ghost" data-i18n="history"></button>
+    <button type="button" id="storageBtn" class="ghost" data-i18n="storage"></button>
+    <button type="button" id="settingsBtn" class="ghost" data-i18n="settings"></button>
+    <button type="button" id="langBtn" class="ghost"></button>
+  </div>
+</header>
+
+<div class="body single" id="body">
+  <aside>
+    <div class="side-head" id="sideHead"></div>
+    <div class="side-tools"><button id="iconsAll" class="small icon-btn"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><circle cx="5.5" cy="6" r="1.3"/><path d="M2 12l3.8-3.6 2.6 2.4 2.3-2 3.3 3.2"/></svg><span data-i18n="icons_all"></span></button></div>
+    <ul id="showList"></ul>
+    <div class="side-foot">
+      <button id="applyReady" class="primary"></button>
+      <p id="readyNote"></p>
+    </div>
+  </aside>
+  <main id="main"></main>
+</div>
+
+<dialog id="edit">
+  <form method="dialog" id="editForm">
+    <h2 data-i18n="edit_title"></h2>
+    <p class="file fn" id="eFile"></p>
+    <div class="fields">
+      <label><span data-i18n="season_lbl"></span><input type="number" id="eSeason" min="0" max="99" required></label>
+      <label><span data-i18n="episode_lbl"></span><input type="number" id="eEp" min="1" max="9999" required></label>
+    </div>
+    <p class="hint" data-i18n="season0_hint"></p>
+    <label class="check"><input type="checkbox" id="eSkip"> <span data-i18n="dont_rename"></span></label>
+    <div class="shift" id="shiftBox" hidden>
+      <p id="shiftText"></p>
+      <div class="line">
+        <span data-i18n="add"></span><input type="number" id="eShift" min="0" max="999">
+        <span id="shiftWhat"></span>
+        <button type="button" id="doShift" data-i18n="shift_btn"></button>
+      </div>
+    </div>
+    <div class="dlg-actions">
+      <button type="button" class="ghost" id="eCancel" data-i18n="cancel"></button>
+      <button type="submit" class="primary" id="eSave" data-i18n="save"></button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="confirm">
+  <h2 id="cTitle"></h2>
+  <p id="cText"></p>
+  <p data-i18n="del_hint" id="cHint"></p>
+  <ul id="cFiles"></ul>
+  <div class="dlg-actions">
+    <button type="button" class="ghost" id="cNo" data-i18n="cancel"></button>
+    <button type="button" class="danger" id="cYes" data-i18n="del_btn"></button>
+  </div>
+</dialog>
+
+<div id="dropZone" aria-hidden="true"><div><span class="demo"><i></i><i></i><i class="m"></i><i></i></span><b data-i18n="drop_here"></b></div></div>
+
+<div id="toast" role="status" aria-live="polite"><span id="toastText"></span><button id="toastBtn" hidden></button></div>
+
+<script>
+/* ======================= words (English / العربية) ======================= */
+const pl = (n, one, many) => (n === 1 ? one : many);
+const WORDS = {
+  en: {
+    storage: "Storage", settings: "Settings",
+    set_title: "Settings", fmt_title: "File name format", fmt_intro: "How renamed episodes are named. The example uses the show you have open.",
+    fmt_custom: "Your own format", fmt_help: "Use {show} for the folder name, {season} and {episode} for 2-digit numbers (S01E05), {s} and {e} for plain numbers (1x5).",
+    fmt_noseason: "This format has no season, so episodes from different seasons in one folder will get the same name.",
+    save_settings: "Save", reset_default: "Back to default",
+    sc_title: "Shortcuts", sc_label: "EpisodeFlow on the Desktop and in the Send To menu",
+    sc_hint: "Send To: right-click any anime folder, then Send to, then EpisodeFlow.",
+    banner_title: "Add EpisodeFlow to your Desktop and the Send To menu?",
+    banner_text: "Then you can open any anime folder with a right-click. You can change this later in Settings.",
+    banner_yes: "Add shortcuts", banner_no: "Not now",
+    about_title: "About", about_version: (v) => `EpisodeFlow ${v.v}`,
+    about_credits: "Anime data and posters come from AniList. EpisodeFlow is not affiliated with AniList.",
+    about_repo: "Project page on GitHub",
+    rm_title: "Remove EpisodeFlow", rm_text_portable: "Removes the shortcuts, your history and settings, and EpisodeFlow.exe itself. Your anime files are never touched.",
+    rm_text_dev: "You're running the source files, so just delete their folder.",
+    rm_btn: "Remove from this PC",
+    rm_confirm_title: "Remove EpisodeFlow from this PC?", rm_confirm_text: "The window closes and EpisodeFlow removes itself. Renames you already did stay as they are.",
+    rm_done: "EpisodeFlow is being removed. You can close this window.",
+    err_remove_dev: "Running from the source files: just delete the folder.",
+    data_title: "Program data", data_intro: "Your rename history, settings, saved AniList info and the error log are kept here, out of your way.",
+    open_data: "Open data folder", t_saved: "Saved. The new format is used from now on.",
+    st_title: "Storage", st_intro: (v) => `${v.n} ${pl(v.n, "show", "shows")} in this folder`, st_biggest: "Biggest files",
+    st_parts: "Episodes, then subtitles, then other files.", st_none: "Open a folder first to see how much space it takes.",
+    size_line: (v) => `Takes ${v.size}`,
+    err_tpl_empty: "Write a format first.", err_tpl_episode: "The format needs {episode} or {e}, or every file would get the same name.",
+    err_tpl_chars: "File names can't contain \\ / : * ? \" < > | or unknown {words}.", err_tpl_long: "That format is too long.",
+    err_icon_download: "Couldn't download the picture from AniList.",
+    lang_btn: "عربي", path_ph: "Paste a folder path, or choose one", choose: "Choose folder", reload: "Reload", history: "History",
+    shows_n: (v) => `${v.n} shows`, reading_n: (v) => `Reading ${v.i} of ${v.n}…`,
+    st_waiting: "Waiting", st_analyzing: "Reading…", st_ready: "Ready", st_review: "Check", st_conflict: "Conflict", st_done: "Done", st_empty: "No episodes", st_error: "Error",
+    rename_ready: (v) => v.n ? `Rename ${v.n} ready ${pl(v.n, "show", "shows")}` : "Rename ready shows",
+    ready_files: (v) => `${v.n} ${pl(v.n, "file", "files")}.`,
+    others_need: (v) => ` ${v.n} other ${pl(v.n, "show needs", "shows need")} a look first.`,
+    open_check: "Open the shows marked Check or Conflict and rename them one by one.",
+    icons_all: "Poster icons for all folders", icons_progress: (v) => `Setting icons ${v.i} of ${v.n}…`,
+    empty_title: "Choose a folder to start",
+    empty_text: "Pick one anime folder, or a folder that has several anime folders inside, or drag it onto this window. Nothing is renamed until you press Rename.",
+    drop_here: "Drop the folder to open it", drop_exe_only: "Drag and drop works in EpisodeFlow.exe. Here, use Choose folder.",
+    reading_title: (v) => `Reading ${v.name}`, reading_text: "Finding episode numbers and checking AniList.",
+    cant_read: "Couldn't read this folder",
+    matched: (v) => `Matched on AniList: <b>${v.title}</b>. Check this is the right anime, since episode counts come from it.`,
+    al_offline: "AniList couldn't be reached, so episodes are counted from the folder.",
+    al_nomatch: (v) => `AniList has no match for “${v.show}”, so episodes are counted from the folder.`,
+    set_icon: "Use this poster as the folder icon", remove_icon: "Remove folder icon", icon_on: "The folder has this poster as its icon.",
+    season: (v) => `Season ${v.n}`, specials: "Specials",
+    have_of: (v) => `${v.have} of ${v.total}`, n_eps: (v) => `${v.n} ${pl(v.n, "episode", "episodes")}`,
+    aired_so_far: (v) => `${v.n} aired so far`, in_total: (v) => `${v.n} in total`, still_airing: "Still airing",
+    no_count: "AniList count unavailable", missing: (v) => `Missing ${v.list}.`, between: (v) => `${v.n} ${pl(v.n, "episode", "episodes")}`,
+    n_files: (v) => `${v.n} ${pl(v.n, "file", "files")}`,
+    current_file: "Current file", new_name: "New name", not_renamed: "Not renamed",
+    p_review: "Check", p_conflict: "Conflict", p_skip: "Skipped", p_same: "Already named", p_special: "Special",
+    subs_n: (v) => `+ ${v.n} subtitle ${pl(v.n, "file", "files")}`,
+    sum_conflict: (v) => `<b>${v.n} files</b> share an episode number. Choose what to keep above, or click a file to fix its number.`,
+    btn_conflict: (v) => `Fix ${v.n} conflicts first`,
+    sum_nothing: "Everything here is already named.", btn_nothing: "Nothing to rename",
+    sum_rename: (v) => `<b>${v.n} ${pl(v.n, "file", "files")}</b> will be renamed.`,
+    sum_check: (v) => ` ${v.n} marked Check: worth a look.`,
+    btn_rename: (v) => `Rename ${v.n} ${pl(v.n, "file", "files")}`, undo_last: "Undo last rename", undo: "Undo",
+    t_renamed: (v) => `Renamed ${v.n} ${pl(v.n, "file", "files")}.`,
+    t_restored: (v) => `Restored ${v.n} ${pl(v.n, "file", "files")} to their old names.`,
+    t_renamed_all: (v) => `Renamed ${v.n} files in ${v.s} ${pl(v.s, "show", "shows")}.`,
+    t_shifted: (v) => `Shifted Part ${v.p} by ${v.n}.`,
+    t_recycled: (v) => `Moved ${v.n} ${pl(v.n, "file", "files")} to the Recycle Bin.`,
+    t_icon: "Folder icon set. Explorer can take a moment to show it.", t_icon_removed: "Folder icon removed.",
+    t_icons_all: (v) => `Set icons for ${v.n} ${pl(v.n, "show", "shows")}.` + (v.f ? ` Couldn't for: ${v.f}.` : ""),
+    edit_title: "Edit episode", season_lbl: "Season", episode_lbl: "Episode", season0_hint: "Season 0 is for specials and OVAs.",
+    dont_rename: "Don't rename this file", add: "Add", shift_btn: "Shift", cancel: "Cancel", save: "Save",
+    shift_text: (v) => `This file is from Part ${v.p}. The number in its name is ${v.raw}. If Part ${v.p} restarts at 1, add the number of episodes before it.`,
+    shift_what: (v) => `to every Part ${v.p} file in ${v.season}`,
+    dup_title: "Same episode, more than one file",
+    dup_intro: "These would end up with the same name. Keep one copy, or keep both with the quality added to the name.",
+    best: "Best quality", keep_selected: "Keep the selected one", keep_both: "Keep both",
+    dup_wrong: "Different episodes? Click a file in the list below to fix its number.",
+    del_title: (v) => `Delete ${v.n} ${pl(v.n, "file", "files")}?`,
+    del_text: (v) => v.n === 1 ? "It goes to the Recycle Bin, so you can restore it from there." : "They go to the Recycle Bin, so you can restore them from there.",
+    del_hint: "Want both qualities? Cancel and press Keep both instead.", del_btn: "Move to Recycle Bin",
+    history_title: "History", history_empty: "Nothing has been renamed yet.", back: "Back",
+    h_rename: (v) => `Renamed ${v.n} ${pl(v.n, "file", "files")}`, h_recycle: (v) => `Moved ${v.n} ${pl(v.n, "file", "files")} to the Recycle Bin`,
+    h_undone: "Undone", h_recycle_note: "Restore from the Recycle Bin", more: (v) => `and ${v.n} more`,
+    // notes from the engine
+    half_special: (v) => `Episode ${v.n}.5 is treated as a special (Season 0)`,
+    lone_number: "Episode number guessed from the only number in the name",
+    no_number: "No episode number found, so it won't be renamed",
+    season_neighbours: (v) => `Season ${v.s} guessed from the files around it`,
+    season_folder: (v) => `Season ${v.s} taken from the folder name`,
+    season_assumed: "No season in the name, so Season 1 was assumed",
+    special_numbered: (v) => `Special with no number, numbered ${v.n} by name order`,
+    season_title: (v) => `Season ${v.s}: the name matches “${v.t}” on AniList`,
+    part_anilist: (v) => `Part ${v.p} starts after episode ${v.n} on AniList, so +${v.n} was added`,
+    part_no_base: (v) => `Part ${v.p}, with no earlier part here to count from. If its numbers restart at 1, shift it`,
+    part_folder: (v) => `Part ${v.p} restarts at 1, so +${v.n} was added (counted from the files here). If Part ${v.q} isn't complete here, change the shift`,
+    edited: "Edited by you", shifted: (v) => `Shifted +${v.n} by you`, kept_both: "Kept next to another copy of this episode",
+    same_number: "Another file has the same episode number", skipped: "You chose not to rename this file",
+    // errors
+    err_choose: "Choose a folder first.", err_no_folder: (v) => `This folder doesn't exist: ${v.name}`,
+    err_no_episodes: "No episodes found here, or in the folders inside it.",
+    err_conflicts: "Some files share the same episode number. Fix them first.",
+    err_exists: (v) => `A file with this name already exists: ${v.name}`,
+    err_undo_moved: (v) => `Can't undo: this file was moved or renamed since: ${v.name}`,
+    err_undo_taken: (v) => `Can't undo: a file already has the old name: ${v.name}`,
+    err_undo_none: "There's nothing to undo for this entry.", err_undo_folder: (v) => `This folder doesn't exist any more: ${v.name}`,
+    err_recycle: (v) => `Couldn't move to the Recycle Bin: ${v.name}`,
+    err_icon_windows: "Folder icons only work on Windows.", err_icon_custom: "This folder already has its own icon, so it was left alone.",
+    err_icon_failed: "Couldn't make the icon from the AniList picture.", err_icon_nocover: "AniList has no picture for this show.",
+  },
+  ar: {
+    storage: "المساحة", settings: "الإعدادات",
+    set_title: "الإعدادات", fmt_title: "شكل اسم الملف", fmt_intro: "كيف تتسمى الحلقات. المثال من الأنمي المفتوح عندك.",
+    fmt_custom: "شكل خاص فيك", fmt_help: "استخدم {show} لاسم المجلد، و{season} و{episode} للأرقام بخانتين (S01E05)، و{s} و{e} للأرقام بدون أصفار (1x5).",
+    fmt_noseason: "هذا الشكل ما فيه موسم، فالحلقات من مواسم مختلفة في نفس المجلد بتاخذ نفس الاسم.",
+    save_settings: "حفظ", reset_default: "رجّع الافتراضي",
+    sc_title: "الاختصارات", sc_label: "EpisodeFlow على سطح المكتب وفي قائمة Send To",
+    sc_hint: "Send To: كليك يمين على أي مجلد أنمي، ثم Send to، ثم EpisodeFlow.",
+    banner_title: "تبي تضيف EpisodeFlow لسطح المكتب وقائمة Send To؟",
+    banner_text: "كذا تقدر تفتح أي مجلد أنمي بكليك يمين. وتقدر تغيّرها بعدين من الإعدادات.",
+    banner_yes: "أضف الاختصارات", banner_no: "مو الحين",
+    about_title: "عن البرنامج", about_version: (v) => `EpisodeFlow ${v.v}`,
+    about_credits: "بيانات الأنمي والبوسترات من AniList. وEpisodeFlow ما له علاقة رسمية بـ AniList.",
+    about_repo: "صفحة المشروع على GitHub",
+    rm_title: "إزالة EpisodeFlow", rm_text_portable: "يشيل الاختصارات، وسجلك وإعداداتك، وملف EpisodeFlow.exe نفسه. ملفات الأنمي ما تنلمس أبداً.",
+    rm_text_dev: "أنت مشغّل ملفات الكود، فاحذف مجلدها بس.",
+    rm_btn: "إزالة من الجهاز",
+    rm_confirm_title: "تبي تزيل EpisodeFlow من الجهاز؟", rm_confirm_text: "النافذة بتتسكّر والبرنامج يشيل نفسه. والتسميات اللي سويتها تبقى زي ما هي.",
+    rm_done: "جاري إزالة EpisodeFlow. تقدر تسكّر هالنافذة.",
+    err_remove_dev: "أنت مشغّل ملفات الكود: احذف المجلد بس.",
+    data_title: "بيانات البرنامج", data_intro: "سجل التسميات والإعدادات ونتايج AniList المحفوظة وملف الأخطاء، كلها محفوظة هنا بعيد عن طريقك.",
+    open_data: "افتح مجلد البيانات", t_saved: "انحفظ. الشكل الجديد بيستخدم من الحين.",
+    st_title: "المساحة", st_intro: (v) => `${v.n} أنمي في هذا المجلد`, st_biggest: "أكبر الملفات",
+    st_parts: "الحلقات، بعدها الترجمات، بعدها باقي الملفات.", st_none: "افتح مجلد أول عشان تشوف كم ياخذ مساحة.",
+    size_line: (v) => `ياخذ ${v.size}`,
+    err_tpl_empty: "اكتب الشكل أول.", err_tpl_episode: "لازم يكون في الشكل {episode} أو {e}، وإلا كل الملفات بتاخذ نفس الاسم.",
+    err_tpl_chars: "أسماء الملفات ما تقبل \\ / : * ? \" < > | ولا كلمات {غير معروفة}.", err_tpl_long: "الشكل طويل مرة.",
+    err_icon_download: "ما قدرت أنزّل الصورة من AniList.",
+    lang_btn: "English", path_ph: "الصق مسار مجلد، أو اختر واحد", choose: "اختيار مجلد", reload: "تحديث", history: "السجل",
+    shows_n: (v) => `${v.n} أنمي`, reading_n: (v) => `جاري القراءة ${v.i} من ${v.n}…`,
+    st_waiting: "بالانتظار", st_analyzing: "جاري القراءة…", st_ready: "جاهز", st_review: "راجعه", st_conflict: "تعارض", st_done: "منتهي", st_empty: "ما فيه حلقات", st_error: "خطأ",
+    rename_ready: (v) => v.n ? `تسمية الجاهز (${v.n})` : "تسمية الجاهز",
+    ready_files: (v) => `${v.n} ملف.`,
+    others_need: (v) => ` و${v.n} غيرها تحتاج مراجعة أول.`,
+    open_check: "افتح اللي عليها «راجعه» أو «تعارض» وسمّها واحد واحد.",
+    icons_all: "بوسترات لكل المجلدات", icons_progress: (v) => `جاري الأيقونات ${v.i} من ${v.n}…`,
+    empty_title: "اختر مجلد عشان تبدأ",
+    empty_text: "اختر مجلد أنمي واحد، أو مجلد فيه مجلدات أنميات، أو اسحبه على هالنافذة. ما يتغير أي اسم إلا لما تضغط «تسمية».",
+    drop_here: "أفلت المجلد عشان يفتح", drop_exe_only: "السحب والإفلات يشتغل في EpisodeFlow.exe. هنا استخدم «اختيار مجلد».",
+    reading_title: (v) => `جاري قراءة ${v.name}`, reading_text: "أدور على أرقام الحلقات وأشيك على AniList.",
+    cant_read: "ما قدرت أقرأ هذا المجلد",
+    matched: (v) => `طابقته في AniList مع: <b class="fn">${v.title}</b>. تأكد إنه الأنمي الصحيح، لأن عدد الحلقات يجي منه.`,
+    al_offline: "ما قدرت أوصل لـ AniList، فالحلقات محسوبة من المجلد.",
+    al_nomatch: (v) => `ما لقيت «${v.show}» في AniList، فالحلقات محسوبة من المجلد.`,
+    set_icon: "حط البوستر أيقونة للمجلد", remove_icon: "شيل الأيقونة", icon_on: "المجلد عليه هذا البوستر كأيقونة.",
+    season: (v) => `الموسم ${v.n}`, specials: "الحلقات الخاصة",
+    have_of: (v) => `${v.have} من ${v.total}`, n_eps: (v) => `${v.n} حلقة`,
+    aired_so_far: (v) => `نزل منه ${v.n}`, in_total: (v) => `${v.n} حلقة بالكامل`, still_airing: "لسه ينعرض",
+    no_count: "عدد AniList غير متوفر", missing: (v) => `ناقص: ${v.list}`, between: (v) => `${v.n} حلقة`,
+    n_files: (v) => `${v.n} ملف`,
+    current_file: "الاسم الحالي", new_name: "الاسم الجديد", not_renamed: "ما راح يتغير",
+    p_review: "راجعه", p_conflict: "تعارض", p_skip: "متجاهل", p_same: "اسمه صحيح", p_special: "خاصة",
+    subs_n: (v) => `+ ${v.n} ملف ترجمة`,
+    sum_conflict: (v) => `<b>${v.n} ملفات</b> لها نفس رقم الحلقة. اختر وش تخلي فوق، أو اضغط على ملف وعدّل رقمه.`,
+    btn_conflict: (v) => `صلّح التعارض أول (${v.n})`,
+    sum_nothing: "كل الأسماء هنا صحيحة.", btn_nothing: "ما فيه شي يتسمى",
+    sum_rename: (v) => `<b>${v.n} ملف</b> بيتغير اسمه.`,
+    sum_check: (v) => ` و${v.n} عليها «راجعه».`,
+    btn_rename: (v) => `تسمية ${v.n} ملف`, undo_last: "تراجع عن آخر تسمية", undo: "تراجع",
+    t_renamed: (v) => `تغيّر اسم ${v.n} ملف.`,
+    t_restored: (v) => `رجعت أسماء ${v.n} ملف القديمة.`,
+    t_renamed_all: (v) => `تغيّر اسم ${v.n} ملف في ${v.s} أنمي.`,
+    t_shifted: (v) => `انزاح الجزء ${v.p} بـ ${v.n}.`,
+    t_recycled: (v) => `راح ${v.n} ملف لسلة المحذوفات.`,
+    t_icon: "انحطت الأيقونة. ممكن تاخذ لحظة لين تبان في المستكشف.", t_icon_removed: "انشالت الأيقونة.",
+    t_icons_all: (v) => `انحطت أيقونات لـ ${v.n} أنمي.` + (v.f ? ` وما ضبطت لـ: ${v.f}.` : ""),
+    edit_title: "تعديل الحلقة", season_lbl: "الموسم", episode_lbl: "الحلقة", season0_hint: "الموسم 0 للحلقات الخاصة والـ OVA.",
+    dont_rename: "لا تغيّر اسم هذا الملف", add: "أضف", shift_btn: "إزاحة", cancel: "إلغاء", save: "حفظ",
+    shift_text: (v) => `هذا الملف من الجزء ${v.p}، والرقم في اسمه ${v.raw}. لو الجزء ${v.p} يبدأ من 1، أضف عدد الحلقات اللي قبله.`,
+    shift_what: (v) => `لكل ملفات الجزء ${v.p} في ${v.season}`,
+    dup_title: "نفس الحلقة، أكثر من ملف",
+    dup_intro: "هذي الملفات بتاخذ نفس الاسم. خلّ نسخة وحدة، أو خلّ الثنتين وتنضاف الجودة للاسم.",
+    best: "أعلى جودة", keep_selected: "خلّ المختار بس", keep_both: "خلّ الثنتين",
+    dup_wrong: "حلقات مختلفة؟ اضغط على الملف تحت وعدّل رقمه.",
+    del_title: (v) => `حذف ${v.n} ملف؟`,
+    del_text: "بتروح لسلة المحذوفات، وتقدر ترجعها منها.",
+    del_hint: "تبي الجودتين؟ اضغط إلغاء واختر «خلّ الثنتين».", del_btn: "انقل لسلة المحذوفات",
+    history_title: "السجل", history_empty: "ما تغيّر أي اسم للحين.", back: "رجوع",
+    h_rename: (v) => `تغيّر اسم ${v.n} ملف`, h_recycle: (v) => `راح ${v.n} ملف لسلة المحذوفات`,
+    h_undone: "تم التراجع", h_recycle_note: "ترجع من سلة المحذوفات", more: (v) => `و${v.n} غيرها`,
+    half_special: (v) => `الحلقة ${v.n}.5 اعتبرتها حلقة خاصة (الموسم 0)`,
+    lone_number: "رقم الحلقة مأخوذ من الرقم الوحيد في الاسم",
+    no_number: "ما لقيت رقم حلقة، فما راح يتغير اسمه",
+    season_neighbours: (v) => `الموسم ${v.s} من الملفات اللي جنبه`,
+    season_folder: (v) => `الموسم ${v.s} من اسم المجلد`,
+    season_assumed: "ما فيه موسم في الاسم، فاعتبرته الموسم 1",
+    special_numbered: (v) => `حلقة خاصة بدون رقم، أخذت رقم ${v.n} حسب ترتيب الأسماء`,
+    season_title: (v) => `الموسم ${v.s}: الاسم يطابق «${v.t}» في AniList`,
+    part_anilist: (v) => `الجزء ${v.p} يبدأ بعد الحلقة ${v.n} في AniList، فانضاف \u2066+${v.n}\u2069`,
+    part_no_base: (v) => `الجزء ${v.p} وما فيه جزء قبله هنا أحسب منه. لو أرقامه تبدأ من 1، سوّ له إزاحة`,
+    part_folder: (v) => `الجزء ${v.p} يبدأ من 1، فانضاف \u2066+${v.n}\u2069 (محسوب من الملفات هنا). لو الجزء ${v.q} مو كامل هنا، عدّل الإزاحة`,
+    edited: "عدّلته أنت", shifted: (v) => `أزحته أنت \u2066+${v.n}\u2069`, kept_both: "انحفظ جنب نسخة ثانية من نفس الحلقة",
+    same_number: "فيه ملف ثاني بنفس رقم الحلقة", skipped: "اخترت ما يتغير اسمه",
+    err_choose: "اختر مجلد أول.", err_no_folder: (v) => `هذا المجلد مو موجود: ${v.name}`,
+    err_no_episodes: "ما لقيت حلقات هنا ولا في المجلدات اللي داخله.",
+    err_conflicts: "فيه ملفات لها نفس رقم الحلقة. صلّحها أول.",
+    err_exists: (v) => `فيه ملف موجود بنفس الاسم: ${v.name}`,
+    err_undo_moved: (v) => `ما أقدر أتراجع: الملف انتقل أو تغير اسمه بعدها: ${v.name}`,
+    err_undo_taken: (v) => `ما أقدر أتراجع: فيه ملف أخذ الاسم القديم: ${v.name}`,
+    err_undo_none: "ما فيه شي أتراجع عنه هنا.", err_undo_folder: (v) => `المجلد هذا ما عاد موجود: ${v.name}`,
+    err_recycle: (v) => `ما قدرت أنقله لسلة المحذوفات: ${v.name}`,
+    err_icon_windows: "أيقونات المجلدات تشتغل على الويندوز بس.", err_icon_custom: "هذا المجلد عنده أيقونة خاصة، فما لمسته.",
+    err_icon_failed: "ما قدرت أسوي الأيقونة من صورة AniList.", err_icon_nocover: "AniList ما عنده صورة لهذا الأنمي.",
+  },
+};
+let LANG = (() => { try { return localStorage.getItem("lang") || "en"; } catch (e) { return "en"; } })();
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fn = (s) => `<span class="fn">${esc(s)}</span>`;
+function t(key, vals = {}) {
+  const w = WORDS[LANG][key] ?? WORDS.en[key];
+  if (w === undefined) return key;
+  return typeof w === "function" ? w(vals) : w;
+}
+// values that come from file names / AniList go through esc() before reaching a template that allows HTML
+function tSafe(key, vals = {}) {
+  const safe = {}; for (const k in vals) safe[k] = typeof vals[k] === "string" ? esc(vals[k]) : vals[k];
+  return t(key, safe);
+}
+function applyLang() {
+  document.documentElement.lang = LANG;
+  document.documentElement.dir = LANG === "ar" ? "rtl" : "ltr";
+  document.querySelectorAll("[data-i18n]").forEach((el) => (el.textContent = t(el.dataset.i18n)));
+  document.querySelectorAll("[data-i18n-ph]").forEach((el) => (el.placeholder = t(el.dataset.i18nPh)));
+  document.querySelectorAll("[data-i18n-label]").forEach((el) => el.setAttribute("aria-label", t(el.dataset.i18nLabel)));
+  $("#langBtn").textContent = t("lang_btn");
+  $("#langBtn").lang = LANG === "ar" ? "en" : "ar";
+}
+
+/* ======================= plumbing ======================= */
+const TOKEN = new URLSearchParams(location.search).get("t");
+const $ = (s) => document.querySelector(s);
+const pad = (n) => String(n).padStart(2, "0");
+let state = { shows: [], busy: false, root: "" };
+let selected = null, detail = null, editing = null, view = "show";
+
+async function api(path, body) {
+  const opt = { headers: { "X-Token": TOKEN } };
+  if (body !== undefined) { opt.method = "POST"; opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+  return (await fetch(path, opt)).json();
+}
+const errText = (res) => (res.error_key ? tSafe(res.error_key, res.error_values || {}) : esc(res.error));
+
+/* ======================= sidebar ======================= */
+async function refreshState() {
+  const prev = JSON.stringify(state.shows);
+  state = await api("/api/state");
+  if (state.root && document.activeElement !== $("#path")) $("#path").value = state.root;
+  if (view !== "show") { renderSidebar(); return; }
+  if (!state.shows.length) { renderEmpty(state.message); return; }
+  if (selected === null || !state.shows.some((s) => s.id === selected)) selected = state.shows[0].id;
+  renderSidebar();
+  const cur = state.shows.find((s) => s.id === selected);
+  const changed = prev !== JSON.stringify(state.shows);
+  if (cur && (changed || !detail || detail.id !== cur.id)) {
+    if (cur.status === "analyzing" || cur.status === "waiting") renderLoading(cur);
+    else await loadDetail(cur.id);
+  }
+}
+
+function renderSidebar() {
+  const multi = state.shows.length > 1;
+  $("#body").classList.toggle("single", !multi);
+  if (!multi) return;
+  const reading = state.shows.filter((s) => s.status === "analyzing" || s.status === "waiting").length;
+  $("#sideHead").textContent = reading ? t("reading_n", { i: state.shows.length - reading + 1, n: state.shows.length }) : t("shows_n", { n: state.shows.length });
+  $("#showList").innerHTML = state.shows.map((s) => `
+    <li class="st-${s.status}"><button data-id="${s.id}" aria-current="${view === "show" && s.id === selected}">
+      <span class="dot"></span><span class="show-name fn" title="${esc(s.name)}">${esc(s.name)}</span>
+      <span class="show-state">${t("st_" + s.status)}</span></button></li>`).join("");
+  const ready = state.shows.filter((s) => s.status === "ready");
+  const files = ready.reduce((a, s) => a + s.renames, 0);
+  $("#applyReady").disabled = !ready.length || state.busy;
+  $("#applyReady").textContent = t("rename_ready", { n: ready.length });
+  const other = state.shows.filter((s) => s.status === "review" || s.status === "conflict").length;
+  $("#readyNote").textContent = ready.length ? t("ready_files", { n: files }) + (other ? t("others_need", { n: other }) : "") : (other ? t("open_check") : "");
+  $("#iconsAll").disabled = state.busy || iconsRunning;
+}
+
+$("#showList").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-id]");
+  if (!b) return;
+  selected = Number(b.dataset.id); detail = null; view = "show";
+  renderSidebar(); refreshState();
+});
+
+/* ======================= main views ======================= */
+function renderEmpty(message) {
+  $("#body").classList.add("single");
+  const msg = message ? (typeof message === "object" ? tSafe(message.key, message.values) : esc(message)) : "";
+  $("#main").innerHTML = `${bannerHtml()}
+    <div class="empty">
+      <span class="demo" aria-hidden="true"><i></i><i></i><i class="m"></i><i></i><i></i><i class="m"></i><i></i></span>
+      <h2>${t("empty_title")}</h2><p>${t("empty_text")}</p>
+      ${msg ? `<p class="error-box">${msg}</p>` : ""}
+      <button class="primary" onclick="browse()">${t("choose")}</button>
+    </div>`;
+}
+
+function renderLoading(show) {
+  detail = null;
+  $("#main").innerHTML = `<div class="empty"><span class="demo" aria-hidden="true"><i></i><i class="m"></i><i class="m"></i><i class="m"></i></span>
+    <h2>${tSafe("reading_title", { name: show.name })}</h2><p>${t("reading_text")}</p></div>`;
+}
+
+async function loadDetail(id) {
+  const d = await api(`/api/show?id=${id}`);
+  if (d.error && !d.rows) { $("#main").innerHTML = `<div class="empty"><h2>${t("cant_read")}</h2><p class="error-box">${esc(d.error)}</p></div>`; return; }
+  detail = d; renderDetail();
+}
+
+const seasonName = (s) => (s === 0 ? t("specials") : t("season", { n: s }));
+function ranges(list) {
+  const out = []; let i = 0;
+  while (i < list.length) { let j = i; while (j + 1 < list.length && list[j + 1] === list[j] + 1) j++;
+    out.push(j > i ? `E${pad(list[i])}–${pad(list[j])}` : `E${pad(list[i])}`); i = j + 1; }
+  return `<span class="fn">${out.join(", ")}</span>`;
+}
+function cell(season, e, have, flag) {
+  const cls = have ? `have${flag === "review" ? " flag" : flag === "conflict" ? " bad" : ""}` : "miss";
+  return `<span class="cell ${cls}" data-s="${season}" data-e="${e}" title="E${pad(e)}">${e}</span>`;
+}
+
+function renderTape(d) {
+  const flagged = new Map();
+  for (const r of d.rows) if (r.mark === "review" || r.mark === "conflict") flagged.set(`${r.season}-${r.episode}`, r.mark);
+  const blocks = d.seasons.map((s) => {
+    const have = new Set(s.have);
+    let cells = "", label = "", missing = [];
+    if (s.total > 100) {
+      // Long runners (Conan, One Piece): only the episodes you have, in groups of nearby episodes
+      const runs = [];
+      for (const e of s.have) { const last = runs[runs.length - 1]; if (last && e - last[last.length - 1] <= 10) last.push(e); else runs.push([e]); }
+      runs.forEach((run, k) => {
+        if (k) cells += `<span class="run-gap">${t("between", { n: run[0] - runs[k - 1][runs[k - 1].length - 1] - 1 })}</span>`;
+        for (let e = run[0]; e <= run[run.length - 1]; e++) { cells += cell(s.season, e, have.has(e), flagged.get(`${s.season}-${e}`)); if (!have.has(e)) missing.push(e); }
+      });
+      const count = s.source === "anilist" ? `<span>${t(s.airing ? "aired_so_far" : "in_total", { n: s.total })}</span>` : "";
+      label = `<b>${seasonName(s.season)}</b><span>${t("n_eps", { n: s.have.length })}</span>${count}`;
+    } else {
+      const ends = []; let acc = 0;
+      if (s.parts && s.parts.length > 1) for (const p of s.parts.slice(0, -1)) { acc += p; ends.push(acc); }
+      for (let e = 1; e <= s.total; e++) {
+        cells += cell(s.season, e, have.has(e), flagged.get(`${s.season}-${e}`));
+        if (ends.includes(e)) cells += `<span class="part-gap"></span>`;
+      }
+      missing = s.missing;
+      const extra = s.source !== "anilist" ? `<span class="src">${t("no_count")}</span>` : (s.airing ? `<span class="src">${t("still_airing")}</span>` : "");
+      label = `<b>${seasonName(s.season)}</b><span>${t("have_of", { have: s.have.length, total: s.total })}</span>${extra}`;
+    }
+    const missText = missing.length ? `<p class="miss-text">${t("missing", { list: ranges(missing) })}</p>` : "";
+    const ss = (d.storage.seasons.find((x) => x.season === s.season) || {}).bytes;
+    if (ss) label += `<span class="src fn">${fmtSize(ss)}</span>`;
+    return `<div class="season"><div class="s-label">${label}</div><div><div class="cells">${cells}</div>${missText}</div></div>`;
+  });
+  if (d.specials.length) {
+    blocks.push(`<div class="season"><div class="s-label"><b>${t("specials")}</b><span>${t("n_files", { n: d.specials.length })}</span></div>
+      <div class="cells">${d.specials.map((e) => `<span class="cell sp have" data-s="0" data-e="${e}" title="S00E${pad(e)}">${e}</span>`).join("")}</div></div>`);
+  }
+  return blocks.length ? `<section class="tape">${blocks.join("")}</section>` : "";
+}
+
+const fmtSize = (b) => (b >= 1e12 ? (b / 1e12).toFixed(2) + " TB" : b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : b >= 1e6 ? Math.round(b / 1e6) + " MB" : b ? Math.max(1, Math.round(b / 1e3)) + " KB" : "0 KB");
+function renderDuplicates(d) {
+  if (!d.duplicates.length) return "";
+  const groups = d.duplicates.map((g, gi) => `
+    <div class="dup" data-g="${gi}">
+      <div class="dup-code">S${pad(g.season)}E${pad(g.episode)}</div>
+      ${g.files.map((f) => `
+        <label><input type="radio" name="dup${gi}" value="${f.row}" ${f.best ? "checked" : ""}>
+          <span class="fn">${esc(f.original)}</span>
+          <span class="best">${f.best ? t("best") : ""}</span>
+          <span class="q"><span class="fn">${esc([f.res, fmtSize(f.size)].filter(Boolean).join("\u2002"))}</span></span></label>`).join("")}
+      <div class="dup-actions">
+        <button class="small" data-act="keep-one" data-g="${gi}">${t("keep_selected")}</button>
+        <button class="small" data-act="keep-both" data-g="${gi}">${t("keep_both")}</button>
+      </div>
+    </div>`).join("");
+  return `<section class="dups"><div class="dups-head"><b>${t("dup_title")}</b><p>${t("dup_intro")}</p></div>${groups}
+    <p class="dups-foot">${t("dup_wrong")}</p></section>`;
+}
+
+const PILL = { review: "p_review", conflict: "p_conflict", skip: "p_skip", same: "p_same" };
+function renderRows(d) {
+  return d.rows.map((r) => {
+    const notes = r.notes.map(([k, v]) => `<small class="note">${tSafe(k, v)}</small>`).join("");
+    const info = r.info.map(([k, v]) => `<small class="info">${tSafe(k, v)}</small>`).join("");
+    const subs = r.subs.length ? `<small class="subs">${t("subs_n", { n: r.subs.length })}</small>` : "";
+    const pill = r.special && r.mark === "ok" ? `<span class="pill sp">${t("p_special")}</span>` : (PILL[r.mark] ? `<span class="pill">${t(PILL[r.mark])}</span>` : "<span></span>");
+    return `<div class="row m-${r.mark}" tabindex="0" data-row="${r.row}" data-s="${r.season}" data-e="${r.episode}">
+      <div class="c-old"><span class="fn">${esc(r.original)}</span>${subs}</div>
+      <div class="c-arrow" aria-hidden="true">${LANG === "ar" ? "←" : "→"}</div>
+      <div class="c-new"><span class="name fn">${r.target ? esc(r.target) : t("not_renamed")}</span>${notes}${info}</div>
+      ${pill}</div>`;
+  }).join("");
+}
+
+function bannerHtml() {
+  if (state.mode !== "portable" || state.shortcuts) return "";
+  return `<div class="banner" id="scBanner"><p>${t("banner_title")}<span>${t("banner_text")}</span></p>
+    <button class="primary small" data-banner="yes">${t("banner_yes")}</button><button class="ghost small" data-banner="no">${t("banner_no")}</button></div>`;
+}
+async function bannerAnswer(yes) {
+  await api("/api/shortcuts", { on: yes });
+  state.shortcuts = yes ? "yes" : "no";
+  document.querySelectorAll("#scBanner").forEach((b) => b.remove());
+}
+
+function renderDetail() {
+  const d = detail;
+  view = "show";
+  let match = "", cover = "", tools = "";
+  if (d.anilist && d.anilist.matched) {
+    match = `<p class="match">${tSafe("matched", { title: d.anilist.chain[0].title })}</p>`;
+    if (d.anilist.cover) {
+      cover = `<img class="cover" src="${esc(d.anilist.cover)}" alt="" onerror="this.remove()">`;
+      const svg = `<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><circle cx="5.5" cy="6" r="1.3"/><path d="M2 12l3.8-3.6 2.6 2.4 2.3-2 3.3 3.2"/></svg>`;
+      tools = `<div class="head-tools">${d.has_icon ? `<span class="done">${t("icon_on")}</span>` : ""}
+        <button class="small icon-btn ${d.has_icon ? "has" : ""}" id="iconBtn">${svg}${t(d.has_icon ? "remove_icon" : "set_icon")}</button></div>`;
+    }
+  } else if (d.anilist) {
+    match = `<p class="match warn">${d.anilist.status === "offline" ? t("al_offline") : tSafe("al_nomatch", { show: d.name })}</p>`;
+  }
+  const c = d.counts;
+  let summary, button, disabled = false;
+  if (c.conflict) { summary = t("sum_conflict", { n: c.conflict }); button = t("btn_conflict", { n: c.conflict }); disabled = true; }
+  else if (!d.renames) { summary = t("sum_nothing"); button = t("btn_nothing"); disabled = true; }
+  else { summary = t("sum_rename", { n: d.renames }) + (c.review ? t("sum_check", { n: c.review }) : ""); button = t("btn_rename", { n: d.renames }); }
+  $("#main").innerHTML = `${bannerHtml()}
+    <div class="wrap">
+      <div class="head">${cover}<div class="head-text">
+        <h1 class="fn">${esc(d.name)}</h1>
+        <p class="folder fn">${esc(d.folder)}</p>
+        <p class="size-note">${t("size_line", { size: `<span class="fn">${fmtSize(d.storage.total)}</span>` })}</p>
+        ${match}${tools}
+      </div></div>
+      ${renderTape(d)}
+      ${renderDuplicates(d)}
+      <div class="list" role="list">
+        <div class="list-head"><span>${t("current_file")}</span><span></span><span>${t("new_name")}</span><span></span></div>
+        ${renderRows(d)}
+      </div>
+      <div class="spacer"></div>
+    </div>
+    <footer class="actions">
+      <p>${summary}</p>
+      ${d.can_undo ? `<button class="ghost" id="undoBtn">${t("undo_last")}</button>` : ""}
+      <button class="primary" id="applyBtn" ${disabled ? "disabled" : ""}>${button}</button>
+    </footer>`;
+  $("#applyBtn").onclick = applyShow;
+  if ($("#undoBtn")) $("#undoBtn").onclick = undoShow;
+  if ($("#iconBtn")) $("#iconBtn").onclick = toggleIcon;
+}
+
+/* ======================= history ======================= */
+async function showHistory() {
+  view = "history";
+  renderSidebar();
+  const res = await api("/api/history");
+  renderHistory(res.history || []);
+}
+function renderHistory(list) {
+  const items = list.map((e) => {
+    const n = e.items.length;
+    const files = e.items.slice(0, 4).map((it) => Array.isArray(it)
+      ? `<li><span class="fn">${esc(it[0])}  →  ${esc(it[1])}</span></li>` : `<li><span class="fn">${esc(it)}</span></li>`).join("");
+    const more = n > 4 ? `<li>${t("more", { n: n - 4 })}</li>` : "";
+    let act = "";
+    if (e.kind === "rename") act = e.undone ? `<span class="tag">${t("h_undone")}</span>` : `<button class="small" data-undo="${e.id}" data-folder="${esc(e.folder)}">${t("undo")}</button>`;
+    else act = `<span class="tag">${t("h_recycle_note")}</span>`;
+    return `<div class="h-item ${e.undone ? "undone" : ""}">
+      <div class="h-top"><b class="fn">${esc(e.show)}</b><span class="when">${esc(e.time)}</span><span class="act">${act}</span></div>
+      <div class="h-what">${t(e.kind === "rename" ? "h_rename" : "h_recycle", { n })}</div>
+      <ul class="h-files">${files}${more}</ul></div>`;
+  }).join("");
+  $("#main").innerHTML = `<div class="wrap">
+      <div class="head"><div class="head-text"><h1>${t("history_title")}</h1></div>
+      <button class="ghost" id="backBtn">${t("back")}</button></div>
+      <div class="hist">${items || `<p class="match">${t("history_empty")}</p>`}</div><div class="spacer"></div></div>`;
+  $("#backBtn").onclick = backToShows;
+}
+$("#historyBtn").onclick = showHistory;
+
+/* ======================= settings ======================= */
+async function showSettings() {
+  view = "settings"; renderSidebar();
+  const s = await api("/api/settings");
+  const name = detail ? detail.name : "ReZero";
+  const ex = (tpl) => {
+    if (!tpl || !/\{(episode|e)\}/.test(tpl)) return "";
+    const v = tpl.replaceAll("{show}", name).replaceAll("{season}", "02").replaceAll("{s}", "2").replaceAll("{episode}", "15").replaceAll("{e}", "15");
+    return v + ".mkv";
+  };
+  const isPreset = s.presets.includes(s.template);
+  $("#main").innerHTML = `<div class="wrap">
+    <div class="head"><div class="head-text"><h1>${t("set_title")}</h1></div><button class="ghost" id="backBtn">${t("back")}</button></div>
+    <section class="set-block">
+      <h2>${t("fmt_title")}</h2><p>${t("fmt_intro")}</p>
+      ${s.presets.map((p, i) => `<label class="tpl"><input type="radio" name="tpl" value="${esc(p)}" ${p === s.template ? "checked" : ""}>
+        <span><span class="ex fn">${esc(ex(p))}</span><span class="code fn">${esc(p)}</span></span></label>`).join("")}
+      <label class="tpl"><input type="radio" name="tpl" value="custom" ${isPreset ? "" : "checked"}>
+        <span><span class="ex">${t("fmt_custom")}</span><input type="text" id="tplCustom" spellcheck="false" value="${esc(isPreset ? "{show} - S{season}E{episode}" : s.template)}" dir="ltr">
+        <span class="code fn" id="tplExample"></span></span></label>
+      <p class="tpl-help">${esc(t("fmt_help"))}</p>
+      <p class="tpl-warn" id="tplWarn"></p>
+      <div class="set-actions"><button class="ghost" id="tplReset">${t("reset_default")}</button><button class="primary" id="tplSave">${t("save_settings")}</button></div>
+    </section>
+    <section class="set-block">
+      <h2>${t("data_title")}</h2><p>${t("data_intro")}</p>
+      <p class="folder fn">${esc(s.data_dir)}</p>
+      <div class="set-actions" style="justify-content:flex-start"><button class="small" id="openData">${t("open_data")}</button></div>
+    </section><div class="spacer"></div></div>`;
+  $("#openData").onclick = () => api("/api/open_data", {});
+  const extra = document.createElement("div");
+  extra.innerHTML = `
+    ${s.mode === "portable" ? `<section class="set-block"><h2>${t("sc_title")}</h2>
+      <div class="set-row"><label><input type="checkbox" id="scToggle" ${s.shortcuts === "yes" ? "checked" : ""}> ${t("sc_label")}</label></div>
+      <p class="hint" style="margin:8px 0 0">${t("sc_hint")}</p></section>` : ""}
+    <section class="set-block"><h2>${t("about_title")}</h2>
+      <p class="credits fn" style="display:block">${esc(t("about_version", { v: s.version }))}</p>
+      <p class="credits">${t("about_credits")} <a class="link" data-url="https://anilist.co">anilist.co</a></p>
+      ${s.repo ? `<p class="credits"><a class="link" data-url="${esc(s.repo)}">${t("about_repo")}</a></p>` : ""}
+    </section>
+    <section class="set-block"><h2>${t("rm_title")}</h2>
+      <p>${t(s.mode === "portable" ? "rm_text_portable" : "rm_text_dev")}</p>
+      ${s.mode === "portable" ? `<div class="set-actions" style="justify-content:flex-start"><button class="small danger-text" id="rmBtn">${t("rm_btn")}</button></div>` : ""}
+    </section>`;
+  $(".wrap").insertBefore(extra, $(".wrap .spacer"));
+  if ($("#scToggle")) $("#scToggle").onchange = (e) => api("/api/shortcuts", { on: e.target.checked, remove: !e.target.checked });
+  extra.querySelectorAll("[data-url]").forEach((a) => (a.onclick = () => api("/api/open_url", { url: a.dataset.url })));
+  if ($("#rmBtn")) $("#rmBtn").onclick = () => {
+    $("#cTitle").textContent = t("rm_confirm_title");
+    $("#cText").textContent = t("rm_confirm_text");
+    $("#cFiles").innerHTML = `<li>${esc(t("rm_text_portable"))}</li>`;
+    $("#cYes").textContent = t("rm_btn"); $("#cHint").hidden = true;
+    $("#confirm").showModal();
+    $("#cYes").onclick = async () => {
+      $("#confirm").close();
+      const res = await api("/api/remove_app", {});
+      if (res.error_key || res.error) { toast(errText(res)); return; }
+      $("#main").innerHTML = `<div class="empty"><h2>${t("rm_done")}</h2></div>`;
+    };
+  };
+  const current = () => { const r = document.querySelector('input[name=tpl]:checked').value; return r === "custom" ? $("#tplCustom").value : r; };
+  const update = () => {
+    $("#tplExample").textContent = ex($("#tplCustom").value);
+    const c = current();
+    $("#tplWarn").textContent = c && !/\{(season|s)\}/.test(c) ? t("fmt_noseason") : "";
+  };
+  $("#tplCustom").addEventListener("input", () => { document.querySelector('input[name=tpl][value=custom]').checked = true; update(); });
+  document.querySelectorAll("input[name=tpl]").forEach((r) => r.addEventListener("change", update));
+  update();
+  $("#tplReset").onclick = () => { document.querySelector(`input[name=tpl][value="${s.default}"]`).checked = true; update(); };
+  $("#tplSave").onclick = async () => {
+    const res = await api("/api/settings", { template: current() });
+    if (res.error || res.error_key) { toast(errText(res)); return; }
+    toast(t("t_saved")); detail = null;
+  };
+  $("#backBtn").onclick = backToShows;
+}
+$("#settingsBtn").onclick = showSettings;
+
+/* ======================= storage ======================= */
+async function showStorage() {
+  view = "storage"; renderSidebar();
+  const s = await api("/api/storage");
+  if (!s.shows.length) {
+    $("#main").innerHTML = `<div class="wrap"><div class="head"><div class="head-text"><h1>${t("st_title")}</h1></div><button class="ghost" id="backBtn">${t("back")}</button></div>
+      <p class="match">${t("st_none")}</p></div>`;
+    $("#backBtn").onclick = backToShows; return;
+  }
+  const max = Math.max(...s.shows.map((x) => x.total), 1);
+  const rows = s.shows.map((x) => {
+    const seg = (b) => `<i style="width:${(b / max) * 100}%"></i>`;
+    return `<button class="st-row" data-show="${x.id}"><span class="show-name fn">${esc(x.name)}</span>
+      <span class="bar">${seg(x.videos)}${seg(x.subs)}${seg(x.other)}</span><span class="st-size">${fmtSize(x.total)}</span></button>`;
+  }).join("");
+  const big = s.biggest.map((f) => `<li><span class="fn" style="overflow-wrap:anywhere">${esc(f.name)}</span>
+      <span class="who fn">${esc(f.show)}</span><span class="st-size">${fmtSize(f.bytes)}</span></li>`).join("");
+  $("#main").innerHTML = `<div class="wrap">
+    <div class="head"><div class="head-text"><h1>${t("st_title")}</h1>
+      <div class="st-total">${fmtSize(s.total)}</div><p class="match">${t("st_intro", { n: s.shows.length })}</p></div>
+      <button class="ghost" id="backBtn">${t("back")}</button></div>
+    <div class="st-list">${rows}</div><p class="size-note" style="margin-top:6px">${t("st_parts")}</p>
+    <h2 class="st-sub">${t("st_biggest")}</h2><ul class="big-list">${big}</ul><div class="spacer"></div></div>`;
+  $("#backBtn").onclick = backToShows;
+}
+$("#storageBtn").onclick = showStorage;
+function backToShows() { view = "show"; detail = null; state.shows.length ? refreshState() : renderEmpty(); }
+
+/* ======================= interactions ======================= */
+$("#main").addEventListener("click", async (e) => {
+  const bn = e.target.closest("[data-banner]");
+  if (bn) { bannerAnswer(bn.dataset.banner === "yes"); return; }
+  const st = e.target.closest("[data-show]");
+  if (st) { selected = Number(st.dataset.show); backToShows(); return; }
+  const u = e.target.closest("[data-undo]");
+  if (u) {
+    const res = await api("/api/undo_entry", { entry: Number(u.dataset.undo), folder: u.dataset.folder });
+    if (res.error) { toast(errText(res)); return; }
+    toast(t("t_restored", { n: res.restored })); renderHistory(res.history); return;
+  }
+  const act = e.target.closest("[data-act]");
+  if (act) { dupAction(act.dataset.act, Number(act.dataset.g)); return; }
+  const c = e.target.closest(".cell.have");
+  if (c) {
+    const row = $(`.row[data-s="${c.dataset.s}"][data-e="${c.dataset.e}"]`);
+    if (row) { row.scrollIntoView({ block: "center", behavior: "smooth" }); row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash"); }
+    return;
+  }
+  const row = e.target.closest(".row");
+  if (row) openEdit(Number(row.dataset.row));
+});
+$("#main").addEventListener("keydown", (e) => {
+  const row = e.target.closest(".row");
+  if (row && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openEdit(Number(row.dataset.row)); }
+});
+
+async function dupAction(act, gi) {
+  const g = detail.duplicates[gi];
+  if (act === "keep-both") {
+    afterAction(await api("/api/keep_both", { id: detail.id, rows: g.files.map((f) => f.row) }));
+    return;
+  }
+  const keep = Number(document.querySelector(`input[name="dup${gi}"]:checked`).value);
+  const drop = g.files.filter((f) => f.row !== keep);
+  $("#cTitle").textContent = t("del_title", { n: drop.length });
+  $("#cText").textContent = t("del_text", { n: drop.length });
+  $("#cHint").hidden = false; $("#cYes").textContent = t("del_btn");
+  $("#cFiles").innerHTML = drop.map((f) => `<li><span class="fn">${esc(f.original)}</span></li>`).join("");
+  $("#confirm").showModal();
+  $("#cYes").onclick = async () => {
+    $("#confirm").close();
+    const res = await api("/api/recycle", { id: detail.id, rows: drop.map((f) => f.row) });
+    afterAction(res, res.error ? null : t("t_recycled", { n: res.recycled }));
+  };
+}
+$("#cNo").onclick = () => $("#confirm").close();
+
+function openEdit(i) {
+  const r = detail.rows[i]; editing = r;
+  $("#eFile").textContent = r.original;
+  $("#eSeason").value = r.season ?? 1;
+  $("#eEp").value = r.episode ?? "";
+  $("#eSkip").checked = r.mark === "skip";
+  toggleSkip();
+  const canShift = r.part && r.part >= 2 && r.raw;
+  $("#shiftBox").hidden = !canShift;
+  if (canShift) {
+    $("#shiftText").textContent = t("shift_text", { p: r.part, raw: r.raw });
+    $("#shiftWhat").textContent = t("shift_what", { p: r.part, season: seasonName(r.season) });
+    $("#eShift").value = r.episode && r.raw ? r.episode - r.raw : "";
+  }
+  $("#edit").showModal();
+  (r.episode ? $("#eEp") : $("#eSeason")).select();
+}
+function toggleSkip() { const s = $("#eSkip").checked; $("#eSeason").disabled = s; $("#eEp").disabled = s; }
+$("#eSkip").addEventListener("change", toggleSkip);
+$("#eCancel").onclick = () => $("#edit").close();
+$("#editForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const skip = $("#eSkip").checked;
+  if (!skip && (!$("#eSeason").checkValidity() || !$("#eEp").checkValidity())) { $("#editForm").reportValidity(); return; }
+  const res = await api("/api/edit", { id: detail.id, row: editing.row, skip, season: Number($("#eSeason").value), episode: Number($("#eEp").value) });
+  $("#edit").close(); afterAction(res);
+});
+$("#doShift").onclick = async () => {
+  const n = Number($("#eShift").value);
+  if (!(n >= 0)) return;
+  const res = await api("/api/shift", { id: detail.id, row: editing.row, offset: n });
+  $("#edit").close(); afterAction(res, t("t_shifted", { p: editing.part, n }));
+};
+
+function afterAction(res, msg) {
+  if (res.error || res.error_key) { toast(errText(res)); return; }
+  if (res.show) { detail = res.show; renderDetail(); }
+  if (msg) toast(msg);
+  refreshState();
+}
+async function applyShow() {
+  $("#applyBtn").disabled = true;
+  const res = await api("/api/apply", { id: detail.id });
+  if (res.error) { toast(errText(res)); $("#applyBtn").disabled = false; return; }
+  detail = res.show; renderDetail();
+  toast(t("t_renamed", { n: res.renamed }), t("undo"), undoShow);
+  refreshState();
+}
+async function undoShow() {
+  const res = await api("/api/undo", { id: detail.id });
+  if (res.error) { toast(errText(res)); return; }
+  detail = res.show; renderDetail();
+  toast(t("t_restored", { n: res.restored }));
+  refreshState();
+}
+// Shrink the AniList poster to icon sizes right here, then send the PNGs to be saved as EpisodeFlow.ico
+async function iconPngs(id) {
+  const res = await fetch(`/api/cover?id=${id}`, { headers: { "X-Token": TOKEN } });
+  if (!res.ok || !(res.headers.get("Content-Type") || "").startsWith("image")) {
+    let j = {}; try { j = await res.json(); } catch (e) {}
+    throw j.error ? j : { error_key: "err_icon_download" };
+  }
+  const img = await createImageBitmap(await res.blob());
+  const out = {};
+  for (const size of [256, 48, 32, 16]) {
+    const c = document.createElement("canvas"); c.width = c.height = size;
+    const g = c.getContext("2d"); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+    const r = Math.min(size / img.width, size / img.height);
+    const w = Math.max(1, Math.round(img.width * r)), hh = Math.max(1, Math.round(img.height * r));
+    g.drawImage(img, Math.round((size - w) / 2), Math.round((size - hh) / 2), w, hh);
+    out[size] = c.toDataURL("image/png").split(",")[1];
+  }
+  return out;
+}
+// fetch with a time limit, so one slow folder can't freeze the whole "all folders" run
+async function apiTimed(path, body, ms) {
+  const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), ms);
+  try {
+    const res = await fetch(path, { method: "POST", signal: ctl.signal,
+      headers: { "X-Token": TOKEN, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    return await res.json();
+  } finally { clearTimeout(timer); }
+}
+async function setIcon(id, batch = false) {
+  try { return await apiTimed("/api/icon", { id, batch, pngs: await iconPngs(id) }, 45000); }
+  catch (e) {
+    api("/api/clientlog", { msg: `icon for show ${id}: ${e && (e.error_key || e.error || e.message || e)}` }).catch(() => {});
+    return e.error_key || e.error ? e : { error_key: "err_icon_failed" };
+  }
+}
+async function toggleIcon() {
+  const btn = $("#iconBtn"); btn.disabled = true;
+  const had = detail.has_icon;
+  const res = had ? await api("/api/icon_remove", { id: detail.id }) : await setIcon(detail.id);
+  afterAction(res, res.error || res.error_key ? null : t(had ? "t_icon_removed" : "t_icon"));
+  if (res.error || res.error_key) btn.disabled = false;
+}
+let iconsRunning = false;
+$("#iconsAll").onclick = async () => {
+  if (iconsRunning) return;
+  iconsRunning = true;
+  const btn = $("#iconsAll"), label = btn.querySelector("span");
+  btn.disabled = true;
+  let done = 0; const failed = [], ids = [];
+  try {
+    // first find which folders still need an icon, then do them one by one with a visible count
+    const todo = [];
+    for (const s of state.shows) {
+      if (s.status === "error" || s.status === "empty" || s.status === "analyzing" || s.status === "waiting") continue;
+      const d = await api(`/api/show?id=${s.id}`);
+      if (d.anilist && d.anilist.cover && !d.has_icon) todo.push(s);
+    }
+    for (let i = 0; i < todo.length; i++) {
+      label.textContent = t("icons_progress", { i: i + 1, n: todo.length });
+      const res = await setIcon(todo[i].id, true);
+      if (res.error || res.error_key) failed.push(todo[i].name); else { done++; ids.push(todo[i].id); }
+    }
+    if (ids.length) await api("/api/icons_done", { ids });
+    toast(tSafe("t_icons_all", { n: done, f: failed.join(", ") }));
+  } catch (e) {
+    toast(t("err_icon_failed"));
+  } finally {
+    iconsRunning = false; btn.disabled = false; label.textContent = t("icons_all");
+    detail = null; refreshState();
+  }
+};
+$("#applyReady").onclick = async () => {
+  $("#applyReady").disabled = true;
+  const res = await api("/api/apply_ready", {});
+  if (res.error) { toast(errText(res)); return; }
+  toast(t("t_renamed_all", { n: res.renamed, s: res.renamed_shows.length }));
+  detail = null; refreshState();
+};
+
+async function openPath(p) {
+  if (!p) return;
+  $("#main").innerHTML = ""; detail = null; selected = null; view = "show";
+  const res = await api("/api/open", { path: p });
+  if (res.error) { renderEmpty(res.error_key ? { key: res.error_key, values: res.error_values } : res.error); return; }
+  refreshState();
+}
+async function browse() {
+  const res = await api("/api/browse", {});
+  if (res.path) { $("#path").value = res.path; openPath(res.path); }
+}
+$("#browse").onclick = browse;
+$("#pathForm").addEventListener("submit", (e) => { e.preventDefault(); openPath($("#path").value.trim()); });
+$("#reload").onclick = async () => {
+  view = "show";
+  if (!state.shows.length) { openPath($("#path").value.trim()); return; }
+  detail = null; const res = await api("/api/reload", {});
+  if (res.error) toast(errText(res)); refreshState();
+};
+$("#langBtn").onclick = () => {
+  LANG = LANG === "ar" ? "en" : "ar";
+  try { localStorage.setItem("lang", LANG); } catch (e) {}
+  applyLang();
+  if (view === "history") showHistory();
+  else if (view === "settings") showSettings();
+  else if (view === "storage") showStorage();
+  else if (detail) { renderDetail(); renderSidebar(); }
+  else refreshState();
+};
+
+let toastTimer;
+function toast(html, btnText, btnFn) {
+  $("#toastText").innerHTML = html;
+  const b = $("#toastBtn");
+  b.hidden = !btnText;
+  if (btnText) { b.textContent = btnText; b.onclick = () => { $("#toast").classList.remove("show"); btnFn(); }; }
+  $("#toast").classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => $("#toast").classList.remove("show"), btnText ? 7000 : 4000);
+}
+
+/* ======================= drag & drop ======================= */
+// In the app window (EpisodeFlow.exe) Python receives the dropped paths and calls epfDropped().
+// In a normal browser window the path isn't available, so we only show a hint.
+const inApp = () => !!window.pywebview;
+let dragDepth = 0;
+const hasFiles = (e) => e.dataTransfer && [...(e.dataTransfer.types || [])].includes("Files");
+addEventListener("dragenter", (e) => { if (!hasFiles(e)) return; dragDepth++; $("#dropZone").classList.add("on"); }, true);
+addEventListener("dragleave", (e) => { if (!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $("#dropZone").classList.remove("on"); }, true);
+addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); }, true);
+addEventListener("drop", (e) => {
+  if (!hasFiles(e)) return;
+  dragDepth = 0; $("#dropZone").classList.remove("on");
+  if (!inApp()) { e.preventDefault(); toast(t("drop_exe_only")); }
+}, true);
+window.epfDropped = () => { selected = null; detail = null; view = "show"; $("#main").innerHTML = ""; refreshState(); };
+
+/* ======================= start ======================= */
+try {
+  const w = Math.min(outerWidth, screen.availWidth), hgt = Math.min(outerHeight, screen.availHeight);
+  if (w < outerWidth || hgt < outerHeight) { moveTo(screen.availLeft || 0, screen.availTop || 0); resizeTo(w, hgt); }
+} catch (e) {}
+applyLang();
+setInterval(() => api("/api/beat", {}).catch(() => {}), 3000);
+api("/api/beat", {});
+addEventListener("pagehide", () => fetch("/api/bye", { method: "POST", keepalive: true, headers: { "X-Token": TOKEN } }));
+(async function loop() {
+  try { await refreshState(); } catch (e) {}
+  setTimeout(loop, state.busy ? 700 : 4000);
+})();
+</script>
+</body>
+</html>
