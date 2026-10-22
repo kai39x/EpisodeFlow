@@ -45,6 +45,13 @@ EpisodeFlow shows both with their quality and size and suggests the better one. 
 
 <img src="docs/images/duplicates.png" alt="Duplicate episodes" width="820">
 
+### Themes and glass
+Five themes in **Settings → Appearance**: Match Windows, Light, Dark, **OLED** (true black, so OLED pixels switch off) and **Aurora** (night blue with soft colour behind the glass). Buttons and panels are frosted glass, and there are five accent colours to pick from. Glass can be turned off if the window feels slow on an older PC.
+
+| OLED | Aurora |
+|---|---|
+| <img src="docs/images/oled.png" alt="OLED theme" width="400"> | <img src="docs/images/aurora.png" alt="Aurora theme" width="400"> |
+
 ### Everything else
 - **Many shows at once:** open a folder that has anime folders inside, and rename all the ready ones in one go.
 - **Specials:** OVA, OAD, SP and `12.5` episodes go to Season 0.
@@ -53,7 +60,7 @@ EpisodeFlow shows both with their quality and size and suggests the better one. 
 - **Your own name format:** `Show - S01E05`, `S01E05`, `Show - 05`, `Show - 1x05`, or write your own.
 - **Storage:** how much space each show and season takes, and your biggest files.
 - **Drag and drop** a folder onto the window, or right-click a folder and use **Send to → EpisodeFlow**.
-- **English and Arabic**, light and dark mode (follows Windows).
+- **English and Arabic.** Your language and theme are remembered between runs.
 
 | History | Storage |
 |---|---|

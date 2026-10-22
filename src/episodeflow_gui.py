@@ -164,6 +164,29 @@ def show_detail(s: Show) -> dict:
     return base
 
 
+# Look and language, kept in settings.json so they survive restarts (the window's own
+# storage changes with the port every run).
+UI_CHOICES = {"theme": ("system", "light", "dark", "oled", "aurora"),
+              "accent": ("blue", "violet", "teal", "rose", "mono"),
+              "glass": ("on", "off"), "lang": ("en", "ar")}
+
+
+def ui_prefs() -> dict:
+    saved = ef.load_settings().get("ui")
+    if not isinstance(saved, dict):
+        return {}
+    return {k: saved[k] for k, ok in UI_CHOICES.items() if saved.get(k) in ok}
+
+
+def save_ui_prefs(change: dict) -> dict:
+    ui = ui_prefs()
+    ui.update({k: change[k] for k, ok in UI_CHOICES.items() if change.get(k) in ok})
+    data = ef.load_settings()
+    data["ui"] = ui
+    ef.save_settings(data)
+    return ui
+
+
 def settings_view() -> dict:
     s = ef.load_settings()
     return {"template": ef.TEMPLATE, "presets": ef.PRESET_TEMPLATES, "default": ef.DEFAULT_TEMPLATE,
@@ -557,7 +580,12 @@ class Handler(BaseHTTPRequestHandler):
             if parse_qs(url.query).get("t", [""])[0] != TOKEN:
                 return self._send(403, b"Forbidden", "text/plain")
             with open(UI_FILE, "rb") as fh:
-                return self._send(200, fh.read(), "text/html; charset=utf-8")
+                page = fh.read()
+            try:
+                page = page.replace(b"/*EF_PREFS*/{}/*END*/", json.dumps(ui_prefs()).encode("ascii"), 1)
+            except Exception:
+                log_error()
+            return self._send(200, page, "text/html; charset=utf-8")
         if not self._authorized():
             return self._json({"error": "forbidden"}, 403)
         try:
@@ -597,6 +625,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/clientlog":
             log_note("window: " + str(data.get("msg", ""))[:500])
             return self._json({})
+        if path == "/api/ui":
+            try:
+                return self._json({"ui": save_ui_prefs(data)})
+            except Exception as e:
+                log_error()
+                return self._json({"error": str(e)})
         if path == "/api/beat":
             STATE.last_beat, STATE.seen_beat = time.time(), True
             return self._json({})

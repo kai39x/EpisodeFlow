@@ -4,27 +4,87 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EpisodeFlow</title>
+<script>
+/* Look (theme / accent / glass). The server fills EF_PREFS from settings.json. */
+window.EF_PREFS = /*EF_PREFS*/{}/*END*/;
+(function () {
+  var p = window.EF_PREFS || {}, saved = {};
+  try { saved = JSON.parse(localStorage.getItem("look") || "{}") || {}; } catch (e) {}
+  var look = { theme: p.theme || saved.theme || "system", accent: p.accent || saved.accent || "blue", glass: p.glass || saved.glass || "on" };
+  var mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  function paint() {
+    var r = document.documentElement;
+    r.dataset.theme = look.theme; r.dataset.accent = look.accent; r.dataset.glass = look.glass;
+    r.dataset.scheme = look.theme === "light" ? "light" : look.theme === "system" ? (mq && mq.matches ? "dark" : "light") : "dark";
+  }
+  window.EF_LOOK = look;
+  window.setLook = function (change) {
+    var r = document.documentElement;
+    r.classList.add("theming"); clearTimeout(window.__lookTimer);
+    window.__lookTimer = setTimeout(function () { r.classList.remove("theming"); }, 360);
+    for (var k in change) look[k] = change[k];
+    paint();
+    try { localStorage.setItem("look", JSON.stringify(look)); } catch (e) {}
+  };
+  if (mq) { if (mq.addEventListener) mq.addEventListener("change", paint); else mq.addListener(paint); }
+  paint();
+})();
+</script>
 <style>
 :root {
   color-scheme: light;
   --bg: #EEF0F4; --panel: #FFFFFF; --raise: #F6F7FA; --line: #DDE1E8; --line-soft: #EAEDF2;
   --text: #1B2030; --muted: #5E6677; --faint: #8D94A3;
-  --accent: #3A55D6; --accent-soft: #E3E8FC; --on-accent: #FFFFFF;
+  --accent: #3A55D6; --on-accent: #FFFFFF; --accent-soft: color-mix(in srgb, var(--accent) 15%, var(--panel));
   --warn: #A86F00; --warn-soft: #FFF2D6; --bad: #C2302C; --bad-soft: #FDE4E3;
   --good: #1F8A4C; --special: #7D4CC2; --special-soft: #EFE6FB;
   --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --glass: color-mix(in srgb, var(--panel) 58%, transparent);
+  --glass-strong: color-mix(in srgb, var(--panel) 80%, transparent);
+  --glass-blur: blur(18px) saturate(170%);
+  --glass-edge: rgba(255,255,255,.65); --glass-shine: rgba(255,255,255,.55);
+  --glass-shadow: 0 1px 2px rgba(20,30,60,.08), 0 4px 14px rgba(20,30,60,.05); --tint: rgba(20,30,60,.05);
+  --amb-a: 16%; --amb-b: 11%;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --bg: #171A21; --panel: #1F232C; --raise: #262B36; --line: #343A47; --line-soft: #2A2F3A;
-    --text: #E5E8EF; --muted: #9BA2B2; --faint: #6E7586;
-    --accent: #8FA3FF; --accent-soft: #2A3157; --on-accent: #10142A;
-    --warn: #E9B54E; --warn-soft: #3A3020; --bad: #F07471; --bad-soft: #3F2427;
-    --good: #66CC92; --special: #C49CF4; --special-soft: #34284A;
-  }
+:root[data-scheme="dark"] {
+  color-scheme: dark;
+  --bg: #171A21; --panel: #1F232C; --raise: #262B36; --line: #343A47; --line-soft: #2A2F3A;
+  --text: #E5E8EF; --muted: #9BA2B2; --faint: #6E7586;
+  --accent: #8FA3FF; --on-accent: #10142A; --accent-soft: color-mix(in srgb, var(--accent) 24%, var(--panel));
+  --warn: #E9B54E; --warn-soft: #3A3020; --bad: #F07471; --bad-soft: #3F2427;
+  --good: #66CC92; --special: #C49CF4; --special-soft: #34284A;
+  --glass-edge: rgba(255,255,255,.10); --glass-shine: rgba(255,255,255,.09);
+  --glass-shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px rgba(0,0,0,.22); --tint: rgba(255,255,255,.055);
+  --amb-a: 20%; --amb-b: 14%;
 }
+/* OLED: true black, so the pixels switch off */
+:root[data-theme="oled"] {
+  --bg: #000000; --panel: #000000; --raise: #0D0D10; --line: #1E1F24; --line-soft: #121316;
+  --text: #F3F4F6; --muted: #9A9DA6; --faint: #5E626C;
+  --accent-soft: color-mix(in srgb, var(--accent) 20%, #000);
+  --warn-soft: #261E0D; --bad-soft: #2A1013; --special-soft: #1D1230;
+  --glass: rgba(255,255,255,.035); --glass-strong: rgba(10,10,12,.86);
+  --glass-edge: rgba(255,255,255,.09); --glass-shine: rgba(255,255,255,.07);
+  --glass-shadow: none; --tint: rgba(255,255,255,.05);
+}
+/* Aurora: deep night blue with soft colour behind the glass */
+:root[data-theme="aurora"] {
+  --bg: #080B19; --panel: #131834; --raise: #1A2044; --line: #2A3263; --line-soft: #1D2449;
+  --text: #ECEFFB; --muted: #A5ACCD; --faint: #6D759C;
+  --warn-soft: #362C1E; --bad-soft: #3A2030; --special-soft: #2E2350;
+  --glass-edge: rgba(255,255,255,.12); --glass-shine: rgba(255,255,255,.11);
+}
+
+/* accent colours (a lighter shade on dark themes) */
+:root[data-accent="violet"] { --accent: #6A45D1; }
+:root[data-accent="teal"]   { --accent: #0B7F7B; }
+:root[data-accent="rose"]   { --accent: #C3305C; }
+:root[data-accent="mono"]   { --accent: #20263A; }
+:root[data-scheme="dark"][data-accent="violet"] { --accent: #B49CFF; }
+:root[data-scheme="dark"][data-accent="teal"]   { --accent: #4FD1C5; }
+:root[data-scheme="dark"][data-accent="rose"]   { --accent: #FF8FAE; }
+:root[data-scheme="dark"][data-accent="mono"]   { --accent: #ECEEF3; --on-accent: #0A0A0C; }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
@@ -33,6 +93,7 @@ body {
 }
 html[dir=rtl] body { font-size: 14.5px; }
 button, input { font: inherit; color: inherit; }
+input { accent-color: var(--accent); }
 button {
   border: 1px solid var(--line); background: var(--panel); border-radius: 6px;
   padding: 6px 14px; cursor: pointer; white-space: nowrap;
@@ -281,6 +342,154 @@ dialog .file { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; ma
 }
 #toast.show { opacity: 1; transform: translateX(-50%); pointer-events: auto; }
 #toast button { background: transparent; border-color: color-mix(in srgb, var(--bg) 40%, transparent); color: var(--bg); padding: 3px 10px; }
+/* ======================================================================
+   Glass. Every selector mirrors the plain rule above it inside :where(),
+   so it has the same weight and only wins because it comes later.
+   ====================================================================== */
+:where(:root[data-glass="on"]:not([data-theme="oled"])) body {
+  background:
+    radial-gradient(70vw 60vh at 0% 0%, color-mix(in srgb, var(--accent) var(--amb-a), transparent), transparent 70%),
+    radial-gradient(60vw 60vh at 100% 100%, color-mix(in srgb, var(--special) var(--amb-b), transparent), transparent 70%),
+    var(--bg);
+}
+:where(:root[data-theme="aurora"]) body {
+  background:
+    radial-gradient(60vw 60vh at 12% 28%, color-mix(in srgb, var(--accent) 34%, transparent), transparent),
+    radial-gradient(50vw 50vh at 92% 8%, rgba(196,120,244,.32), transparent),
+    radial-gradient(65vw 50vh at 62% 100%, rgba(60,210,190,.22), transparent),
+    var(--bg);
+}
+:where(:root[data-glass="on"]) :is(.top, aside, .list, .dups, .h-item, .set-block, .st-list, .banner) {
+  background: var(--glass); backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 1px 0 var(--glass-shine), var(--glass-shadow);
+}
+:where(:root[data-glass="on"]) :is(.top, aside) { box-shadow: none; }
+:where(:root[data-glass="on"]) .list-head { background: var(--tint); }
+:where(:root[data-glass="on"]) .row:hover,
+:where(:root[data-glass="on"]) .st-row:hover,
+:where(:root[data-glass="on"]) #showList li button:hover { background: var(--tint); }
+:where(:root[data-glass="on"]) .big-list li:nth-child(odd) { background: var(--glass); }
+:where(:root[data-glass="on"]) .actions { background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: var(--glass-blur); }
+:where(:root[data-glass="on"]) :is(#showList li button, .st-row) { box-shadow: none; backdrop-filter: none; }
+:where(:root[data-glass="on"]) #showList li button[aria-current="true"] {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: inset 0 1px 0 var(--glass-shine), inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* buttons */
+:where(:root[data-glass="on"]) button {
+  background: linear-gradient(180deg, var(--glass-shine), transparent 62%), var(--glass);
+  border-color: var(--glass-edge); backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 1px 0 var(--glass-shine), var(--glass-shadow);
+  transition: background-color .15s, box-shadow .15s, transform .08s;
+}
+:where(:root[data-glass="on"]) button:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--glass-shine), transparent 62%), var(--glass-strong);
+  box-shadow: inset 0 1px 0 var(--glass-shine), 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent), var(--glass-shadow);
+}
+:where(:root[data-glass="on"]) button:active:not(:disabled) { transform: translateY(1px); }
+:where(:root[data-glass="on"]) button.primary {
+  background: linear-gradient(180deg, rgba(255,255,255,.34), rgba(255,255,255,0) 55%), color-mix(in srgb, var(--accent) 84%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.55));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.42), inset 0 -1px 0 rgba(0,0,0,.14),
+              0 8px 22px -8px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+:where(:root[data-glass="on"]) button.primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(255,255,255,.42), rgba(255,255,255,0) 55%), var(--accent);
+  filter: none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5), inset 0 -1px 0 rgba(0,0,0,.14),
+              0 10px 28px -8px color-mix(in srgb, var(--accent) 90%, transparent);
+}
+:where(:root[data-glass="on"]) button.danger {
+  background: linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,0) 55%), color-mix(in srgb, var(--bad) 86%, transparent);
+  border-color: color-mix(in srgb, var(--bad) 55%, rgba(255,255,255,.5));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.38), 0 8px 22px -8px color-mix(in srgb, var(--bad) 75%, transparent);
+}
+:where(:root[data-glass="on"]) button.ghost { background: transparent; border-color: transparent; box-shadow: none; backdrop-filter: none; }
+:where(:root[data-glass="on"]) button.ghost:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--glass-shine), transparent 62%), var(--tint);
+  border-color: var(--glass-edge); box-shadow: inset 0 1px 0 var(--glass-shine);
+}
+:where(:root[data-glass="on"]) input[type=text], :where(:root[data-glass="on"]) input[type=number] {
+  background: var(--glass); border-color: var(--glass-edge); backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.10);
+}
+:where(:root[data-glass="on"]) input[type=text]:focus, :where(:root[data-glass="on"]) input[type=number]:focus {
+  border-color: var(--accent); box-shadow: inset 0 1px 3px rgba(0,0,0,.10), 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/* episode tape: glossy tiles */
+:where(:root[data-glass="on"]) .cell:not(.miss), :where(:root[data-glass="on"]) .brand-mark i,
+:where(:root[data-glass="on"]) :is(.empty, #dropZone) .demo i:not(.m) {
+  background-image: linear-gradient(180deg, rgba(255,255,255,.30), rgba(255,255,255,0) 58%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.32), inset 0 -1px 0 rgba(0,0,0,.14);
+}
+
+/* dialogs and the drop zone */
+:where(:root[data-glass="on"]) dialog {
+  background: linear-gradient(180deg, var(--glass-shine), transparent 30%), var(--glass-strong);
+  border-color: var(--glass-edge); backdrop-filter: blur(28px) saturate(170%);
+  box-shadow: inset 0 1px 0 var(--glass-shine), 0 24px 60px rgba(0,0,0,.35);
+}
+:where(:root[data-glass="on"]) dialog::backdrop { background: rgba(8, 10, 20, .35); backdrop-filter: blur(6px); }
+:where(:root[data-glass="on"]) #dropZone > div { background: var(--glass-strong); backdrop-filter: blur(28px) saturate(170%); }
+
+/* ---------- appearance settings ---------- */
+.themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+.theme-card {
+  display: grid; gap: 8px; padding: 8px; border-radius: 10px; text-align: start; white-space: normal;
+  border: 1px solid var(--line); background: var(--panel); align-content: start;
+}
+.theme-card[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) !important; }
+.theme-card b { font-weight: 600; font-size: 13px; display: block; }
+.theme-card small { color: var(--muted); font-size: 11.5px; line-height: 1.3; display: block; }
+.pv { height: 56px; border-radius: 6px; display: grid; grid-template-columns: 26% 1fr; gap: 4px; padding: 5px; direction: ltr; border: 1px solid rgba(128,128,128,.25); }
+.pv i { border-radius: 3px; display: block; }
+.pv span { display: grid; gap: 4px; align-content: start; }
+.pv span i { height: 8px; }
+.pv span i.a { width: 70%; background: var(--accent); }
+.pv-light  { background: #EEF0F4; } .pv-light i { background: #FFFFFF; }
+.pv-dark   { background: #171A21; } .pv-dark i { background: #262B36; }
+.pv-oled   { background: #000; }    .pv-oled i { background: #141418; }
+.pv-aurora { background: radial-gradient(80% 90% at 0% 0%, color-mix(in srgb, var(--accent) 55%, transparent), transparent 70%),
+                         radial-gradient(70% 80% at 100% 100%, rgba(196,120,244,.5), transparent 70%), #080B19; }
+.pv-aurora i { background: rgba(255,255,255,.12); }
+.pv-system { background: linear-gradient(135deg, #EEF0F4 50%, #171A21 50%); }
+.pv-system i { background: rgba(128,128,128,.45); }
+.look-row { display: flex; align-items: center; gap: 14px; margin-top: 16px; flex-wrap: wrap; }
+.look-row > span:first-child { min-width: 110px; color: var(--muted); font-size: 13px; }
+.swatches { display: flex; gap: 8px; }
+.swatch {
+  width: 28px; height: 28px; padding: 0; border-radius: 50% !important; border: 2px solid var(--panel) !important;
+  box-shadow: 0 0 0 1px var(--line) !important; background: var(--sw) !important;
+  background-image: linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,0) 60%) !important;
+  background-color: var(--sw) !important;
+}
+.swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent) !important; }
+.switch { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch .track {
+  width: 40px; height: 22px; border-radius: 11px; background: var(--line); position: relative; flex: none;
+  transition: background-color .2s; box-shadow: inset 0 1px 2px rgba(0,0,0,.2);
+}
+.switch .track::after {
+  content: ""; position: absolute; top: 3px; inset-inline-start: 3px; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: inset-inline-start .2s;
+}
+.switch input:checked + .track { background: var(--accent); }
+.switch input:checked + .track::after { inset-inline-start: 21px; }
+.switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switch small { display: block; color: var(--faint); font-size: 12px; }
+
+/* scrollbars that suit every theme */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text) 20%, transparent); border-radius: 8px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--text) 32%, transparent); }
+::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+/* a soft cross-fade while switching themes */
+html.theming, html.theming * { transition: background-color .3s, color .3s, border-color .3s, box-shadow .3s !important; }
 @media (prefers-reduced-motion: reduce) { *, *::after { animation: none !important; transition: none !important; } }
 @media (max-width: 760px) {
   .body { grid-template-columns: 1fr; } aside { display: none; }
@@ -363,6 +572,14 @@ dialog .file { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; ma
 const pl = (n, one, many) => (n === 1 ? one : many);
 const WORDS = {
   en: {
+    look_title: "Appearance", look_intro: "Changes right away and stays the next time you open EpisodeFlow.",
+    th_system: "Match Windows", th_system_d: "Light or dark, like Windows",
+    th_light: "Light", th_light_d: "Bright and clean",
+    th_dark: "Dark", th_dark_d: "Easy on the eyes",
+    th_oled: "OLED", th_oled_d: "True black, pixels switch off",
+    th_aurora: "Aurora", th_aurora_d: "Night blue with soft colour behind the glass",
+    accent_lbl: "Accent colour", ac_blue: "Blue", ac_violet: "Violet", ac_teal: "Teal", ac_rose: "Rose", ac_mono: "Black and white",
+    glass_lbl: "Glass", glass_on: "Glass buttons and panels", glass_hint: "Turn it off if the window feels slow on this PC.",
     storage: "Storage", settings: "Settings",
     set_title: "Settings", fmt_title: "File name format", fmt_intro: "How renamed episodes are named. The example uses the show you have open.",
     fmt_custom: "Your own format", fmt_help: "Use {show} for the folder name, {season} and {episode} for 2-digit numbers (S01E05), {s} and {e} for plain numbers (1x5).",
@@ -469,6 +686,14 @@ const WORDS = {
     err_icon_failed: "Couldn't make the icon from the AniList picture.", err_icon_nocover: "AniList has no picture for this show.",
   },
   ar: {
+    look_title: "المظهر", look_intro: "يتغير على طول، ويبقى نفسه المرة الجاية اللي تفتح فيها البرنامج.",
+    th_system: "مثل الويندوز", th_system_d: "فاتح أو داكن، حسب الويندوز",
+    th_light: "فاتح", th_light_d: "نظيف ومنوّر",
+    th_dark: "داكن", th_dark_d: "مريح للعين",
+    th_oled: "OLED", th_oled_d: "أسود صافي، البكسلات تطفي",
+    th_aurora: "شفق", th_aurora_d: "كحلي غامق وألوان ناعمة ورا الزجاج",
+    accent_lbl: "اللون الأساسي", ac_blue: "أزرق", ac_violet: "بنفسجي", ac_teal: "فيروزي", ac_rose: "وردي", ac_mono: "أبيض وأسود",
+    glass_lbl: "الزجاج", glass_on: "أزرار ولوحات زجاجية", glass_hint: "طفّه لو حسيت النافذة ثقيلة على هالجهاز.",
     storage: "المساحة", settings: "الإعدادات",
     set_title: "الإعدادات", fmt_title: "شكل اسم الملف", fmt_intro: "كيف تتسمى الحلقات. المثال من الأنمي المفتوح عندك.",
     fmt_custom: "شكل خاص فيك", fmt_help: "استخدم {show} لاسم المجلد، و{season} و{episode} للأرقام بخانتين (S01E05)، و{s} و{e} للأرقام بدون أصفار (1x5).",
@@ -573,7 +798,11 @@ const WORDS = {
     err_icon_failed: "ما قدرت أسوي الأيقونة من صورة AniList.", err_icon_nocover: "AniList ما عنده صورة لهذا الأنمي.",
   },
 };
-let LANG = (() => { try { return localStorage.getItem("lang") || "en"; } catch (e) { return "en"; } })();
+let LANG = (() => {
+  const saved = (window.EF_PREFS || {}).lang;
+  if (saved) return saved;
+  try { return localStorage.getItem("lang") || "en"; } catch (e) { return "en"; }
+})();
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fn = (s) => `<span class="fn">${esc(s)}</span>`;
 function t(key, vals = {}) {
@@ -850,6 +1079,40 @@ function renderHistory(list) {
 }
 $("#historyBtn").onclick = showHistory;
 
+/* ======================= appearance ======================= */
+const THEMES = ["system", "light", "dark", "oled", "aurora"];
+const ACCENTS = { blue: "#3A55D6", violet: "#6A45D1", teal: "#0B7F7B", rose: "#C3305C", mono: "#20263A" };
+const ACCENTS_DARK = { blue: "#8FA3FF", violet: "#B49CFF", teal: "#4FD1C5", rose: "#FF8FAE", mono: "#ECEEF3" };
+function lookBlock() {
+  const L = window.EF_LOOK, dark = document.documentElement.dataset.scheme === "dark";
+  return `<section class="set-block">
+    <h2>${t("look_title")}</h2><p>${t("look_intro")}</p>
+    <div class="themes">${THEMES.map((th) => `<button type="button" class="theme-card" data-theme-pick="${th}" aria-pressed="${L.theme === th}">
+      <span class="pv pv-${th}" aria-hidden="true"><i></i><span><i class="a"></i><i></i><i></i></span></span>
+      <span><b>${t("th_" + th)}</b><small>${t("th_" + th + "_d")}</small></span></button>`).join("")}</div>
+    <div class="look-row"><span>${t("accent_lbl")}</span><div class="swatches">${Object.keys(ACCENTS).map((a) =>
+      `<button type="button" class="swatch" data-accent-pick="${a}" style="--sw:${(dark ? ACCENTS_DARK : ACCENTS)[a]}" title="${t("ac_" + a)}" aria-label="${t("ac_" + a)}" aria-pressed="${L.accent === a}"></button>`).join("")}</div></div>
+    <div class="look-row"><span>${t("glass_lbl")}</span>
+      <label class="switch"><input type="checkbox" id="glassPick" ${L.glass === "on" ? "checked" : ""}><span class="track"></span>
+        <span>${t("glass_on")}<small>${t("glass_hint")}</small></span></label></div>
+  </section>`;
+}
+function pickLook(change) {
+  window.setLook(change);
+  api("/api/ui", change).catch(() => {});
+  const L = window.EF_LOOK, dark = document.documentElement.dataset.scheme === "dark";
+  document.querySelectorAll("[data-theme-pick]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.themePick === L.theme));
+  document.querySelectorAll("[data-accent-pick]").forEach((b) => {
+    b.setAttribute("aria-pressed", b.dataset.accentPick === L.accent);
+    b.style.setProperty("--sw", (dark ? ACCENTS_DARK : ACCENTS)[b.dataset.accentPick]);
+  });
+}
+function bindLook() {
+  document.querySelectorAll("[data-theme-pick]").forEach((b) => (b.onclick = () => pickLook({ theme: b.dataset.themePick })));
+  document.querySelectorAll("[data-accent-pick]").forEach((b) => (b.onclick = () => pickLook({ accent: b.dataset.accentPick })));
+  $("#glassPick").onchange = (e) => pickLook({ glass: e.target.checked ? "on" : "off" });
+}
+
 /* ======================= settings ======================= */
 async function showSettings() {
   view = "settings"; renderSidebar();
@@ -863,6 +1126,7 @@ async function showSettings() {
   const isPreset = s.presets.includes(s.template);
   $("#main").innerHTML = `<div class="wrap">
     <div class="head"><div class="head-text"><h1>${t("set_title")}</h1></div><button class="ghost" id="backBtn">${t("back")}</button></div>
+    ${lookBlock()}
     <section class="set-block">
       <h2>${t("fmt_title")}</h2><p>${t("fmt_intro")}</p>
       ${s.presets.map((p, i) => `<label class="tpl"><input type="radio" name="tpl" value="${esc(p)}" ${p === s.template ? "checked" : ""}>
@@ -880,6 +1144,7 @@ async function showSettings() {
       <div class="set-actions" style="justify-content:flex-start"><button class="small" id="openData">${t("open_data")}</button></div>
     </section><div class="spacer"></div></div>`;
   $("#openData").onclick = () => api("/api/open_data", {});
+  bindLook();
   const extra = document.createElement("div");
   extra.innerHTML = `
     ${s.mode === "portable" ? `<section class="set-block"><h2>${t("sc_title")}</h2>
@@ -1162,6 +1427,7 @@ $("#reload").onclick = async () => {
 $("#langBtn").onclick = () => {
   LANG = LANG === "ar" ? "en" : "ar";
   try { localStorage.setItem("lang", LANG); } catch (e) {}
+  api("/api/ui", { lang: LANG }).catch(() => {});
   applyLang();
   if (view === "history") showHistory();
   else if (view === "settings") showSettings();

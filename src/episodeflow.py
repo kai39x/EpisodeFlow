@@ -21,7 +21,7 @@ import urllib.error
 from dataclasses import dataclass, field
 
 # Change this if you want another format. Placeholders: {show} {season} {episode}
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 REPO_URL = "https://github.com/kai39x/EpisodeFlow"   
 USER_AGENT = f"EpisodeFlow/{VERSION}"
 
