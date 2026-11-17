@@ -593,7 +593,7 @@ const WORDS = {
     about_title: "About", about_version: (v) => `EpisodeFlow ${v.v}`,
     about_credits: "Anime data and posters come from AniList. EpisodeFlow is not affiliated with AniList.",
     about_repo: "Project page on GitHub",
-    rm_title: "Remove EpisodeFlow", rm_text_portable: "Removes the shortcuts, your history and settings, and EpisodeFlow.exe itself. Your anime files are never touched.",
+    rm_title: "Remove EpisodeFlow", rm_text_portable: "Removes the shortcuts, your history and settings, and EpisodeFlow.exe itself. Your anime files are never touched, and poster folder icons you set stay (remove them from each show first if you don't want them).",
     rm_text_dev: "You're running the source files, so just delete their folder.",
     rm_btn: "Remove from this PC",
     rm_confirm_title: "Remove EpisodeFlow from this PC?", rm_confirm_text: "The window closes and EpisodeFlow removes itself. Renames you already did stay as they are.",
@@ -641,6 +641,7 @@ const WORDS = {
     t_renamed: (v) => `Renamed ${v.n} ${pl(v.n, "file", "files")}.`,
     t_restored: (v) => `Restored ${v.n} ${pl(v.n, "file", "files")} to their old names.`,
     t_renamed_all: (v) => `Renamed ${v.n} files in ${v.s} ${pl(v.s, "show", "shows")}.`,
+    t_rename_failed_shows: (v) => `Not renamed, nothing changed there: ${v.f}. Open the show to see why.`,
     t_shifted: (v) => `Shifted Part ${v.p} by ${v.n}.`,
     t_recycled: (v) => `Moved ${v.n} ${pl(v.n, "file", "files")} to the Recycle Bin.`,
     t_icon: "Folder icon set. Explorer can take a moment to show it.", t_icon_removed: "Folder icon removed.",
@@ -682,6 +683,9 @@ const WORDS = {
     err_undo_taken: (v) => `Can't undo: a file already has the old name: ${v.name}`,
     err_undo_none: "There's nothing to undo for this entry.", err_undo_folder: (v) => `This folder doesn't exist any more: ${v.name}`,
     err_recycle: (v) => `Couldn't move to the Recycle Bin: ${v.name}`,
+    err_no_recycle: (v) => `This drive has no Recycle Bin, so nothing was deleted. Delete the file yourself if you're sure: ${v.name}`,
+    err_rename_failed: (v) => `Couldn't rename ${v.name}, so nothing was changed. If it's open in a video player, close it and try again.`,
+    err_rename_stuck: (v) => `Couldn't rename ${v.name}, and couldn't give this file its old name back: ${v.stuck}. Check the folder.`,
     err_icon_windows: "Folder icons only work on Windows.", err_icon_custom: "This folder already has its own icon, so it was left alone.",
     err_icon_failed: "Couldn't make the icon from the AniList picture.", err_icon_nocover: "AniList has no picture for this show.",
   },
@@ -707,7 +711,7 @@ const WORDS = {
     about_title: "عن البرنامج", about_version: (v) => `EpisodeFlow ${v.v}`,
     about_credits: "بيانات الأنمي والبوسترات من AniList. وEpisodeFlow ما له علاقة رسمية بـ AniList.",
     about_repo: "صفحة المشروع على GitHub",
-    rm_title: "إزالة EpisodeFlow", rm_text_portable: "يشيل الاختصارات، وسجلك وإعداداتك، وملف EpisodeFlow.exe نفسه. ملفات الأنمي ما تنلمس أبداً.",
+    rm_title: "إزالة EpisodeFlow", rm_text_portable: "يشيل الاختصارات، وسجلك وإعداداتك، وملف EpisodeFlow.exe نفسه. ملفات الأنمي ما تنلمس أبداً، وأيقونات البوستر اللي حطيتها للمجلدات تبقى (شيلها من كل أنمي قبل لو ما تبيها).",
     rm_text_dev: "أنت مشغّل ملفات الكود، فاحذف مجلدها بس.",
     rm_btn: "إزالة من الجهاز",
     rm_confirm_title: "تبي تزيل EpisodeFlow من الجهاز؟", rm_confirm_text: "النافذة بتتسكّر والبرنامج يشيل نفسه. والتسميات اللي سويتها تبقى زي ما هي.",
@@ -755,6 +759,7 @@ const WORDS = {
     t_renamed: (v) => `تغيّر اسم ${v.n} ملف.`,
     t_restored: (v) => `رجعت أسماء ${v.n} ملف القديمة.`,
     t_renamed_all: (v) => `تغيّر اسم ${v.n} ملف في ${v.s} أنمي.`,
+    t_rename_failed_shows: (v) => `ما تغيّر شي في: ${v.f}. افتحه عشان تشوف السبب.`,
     t_shifted: (v) => `انزاح الجزء ${v.p} بـ ${v.n}.`,
     t_recycled: (v) => `راح ${v.n} ملف لسلة المحذوفات.`,
     t_icon: "انحطت الأيقونة. ممكن تاخذ لحظة لين تبان في المستكشف.", t_icon_removed: "انشالت الأيقونة.",
@@ -794,6 +799,9 @@ const WORDS = {
     err_undo_taken: (v) => `ما أقدر أتراجع: فيه ملف أخذ الاسم القديم: ${v.name}`,
     err_undo_none: "ما فيه شي أتراجع عنه هنا.", err_undo_folder: (v) => `المجلد هذا ما عاد موجود: ${v.name}`,
     err_recycle: (v) => `ما قدرت أنقله لسلة المحذوفات: ${v.name}`,
+    err_no_recycle: (v) => `هالقرص ما فيه سلة محذوفات، فما حذفت شي. احذف الملف بنفسك لو متأكد: ${v.name}`,
+    err_rename_failed: (v) => `ما قدرت أغيّر اسم ${v.name}، فما تغيّر أي شي. لو مفتوح في مشغّل الفيديو سكّره وجرّب مرة ثانية.`,
+    err_rename_stuck: (v) => `ما قدرت أغيّر اسم ${v.name}، وما قدرت أرجّع الاسم القديم لهالملف: ${v.stuck}. شيّك على المجلد.`,
     err_icon_windows: "أيقونات المجلدات تشتغل على الويندوز بس.", err_icon_custom: "هذا المجلد عنده أيقونة خاصة، فما لمسته.",
     err_icon_failed: "ما قدرت أسوي الأيقونة من صورة AniList.", err_icon_nocover: "AniList ما عنده صورة لهذا الأنمي.",
   },
@@ -1401,7 +1409,9 @@ $("#applyReady").onclick = async () => {
   $("#applyReady").disabled = true;
   const res = await api("/api/apply_ready", {});
   if (res.error) { toast(errText(res)); return; }
-  toast(t("t_renamed_all", { n: res.renamed, s: res.renamed_shows.length }));
+  const failed = res.failed_shows || [];
+  toast(t("t_renamed_all", { n: res.renamed, s: res.renamed_shows.length })
+        + (failed.length ? "<br>" + tSafe("t_rename_failed_shows", { f: failed.join(", ") }) : ""));
   detail = null; refreshState();
 };
 

@@ -1,6 +1,6 @@
 """
 EpisodeFlow - engine (Python)
-https://github.com/  (see README.md)
+https://github.com/kai39x/EpisodeFlow
 Used by episodeflow_gui.py (the window) and can also run on its own in a console.
 Renames episode files in a folder to "<Show> - S01E01.mkv", keeping the real
 episode numbers. Shows a preview first and only renames after you confirm.
@@ -20,9 +20,8 @@ import urllib.request
 import urllib.error
 from dataclasses import dataclass, field
 
-# Change this if you want another format. Placeholders: {show} {season} {episode}
-VERSION = "1.1.0"
-REPO_URL = "https://github.com/kai39x/EpisodeFlow"   
+VERSION = "1.1.1"
+REPO_URL = "https://github.com/kai39x/EpisodeFlow"
 USER_AGENT = f"EpisodeFlow/{VERSION}"
 
 # ---------- Where settings, history and the AniList cache live ----------
@@ -34,19 +33,22 @@ def _app_dir() -> str:
 
 
 def _data_dir() -> str:
-    """The user's own data folder (AppData/Local/EpisodeFlow), so nothing shows up next to the program."""
+    """The user's own data folder (AppData/Local/EpisodeFlow), so nothing shows up next to the program.
+    It is always a folder of its own: never the program's folder, so removing it can't touch anything else."""
     base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".local", "share")
-    path = os.path.join(base, "EpisodeFlow")
-    try:
-        os.makedirs(path, exist_ok=True)
-        return path
-    except OSError:
-        return _app_dir()
+    return os.path.join(base, "EpisodeFlow")
 
 
 APP_DIR = _app_dir()
 DATA_DIR = _data_dir()
-DATA_FILES = ["settings.json", "history.json", "anilist_cache.json", "episodeflow_error.log", "window-data"]
+# Everything EpisodeFlow keeps in DATA_DIR. "Remove from this PC" deletes exactly these.
+DATA_FILES = ["settings.json", "history.json", "history.json.tmp", "anilist_cache.json", "episodeflow_error.log"]
+DATA_DIRS = ["window-data", "window"]   # pywebview storage, Edge window profile
+
+
+def ensure_data_dir() -> str:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    return DATA_DIR
 
 
 def migrate_old_data(old_dir: str = APP_DIR, new_dir: str = DATA_DIR) -> list[str]:
@@ -54,7 +56,11 @@ def migrate_old_data(old_dir: str = APP_DIR, new_dir: str = DATA_DIR) -> list[st
     moved = []
     if os.path.normcase(os.path.abspath(old_dir)) == os.path.normcase(os.path.abspath(new_dir)):
         return moved
-    for name in DATA_FILES:
+    try:
+        os.makedirs(new_dir, exist_ok=True)
+    except OSError:
+        return moved
+    for name in DATA_FILES + ["window-data"]:
         old, new = os.path.join(old_dir, name), os.path.join(new_dir, name)
         if not os.path.exists(old):
             continue
@@ -91,7 +97,20 @@ def migrate_old_data(old_dir: str = APP_DIR, new_dir: str = DATA_DIR) -> list[st
     return moved
 
 
-MIGRATED = migrate_old_data()
+MIGRATED: list[str] = []
+
+
+def init() -> list[str]:
+    """Run once when the program starts (importing this file changes nothing on disk):
+    create the data folder and move data left next to the program by older versions."""
+    global MIGRATED
+    MIGRATED = migrate_old_data()
+    try:
+        ensure_data_dir()
+    except OSError:
+        pass
+    return MIGRATED
+
 
 # ---------- Settings ----------
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
@@ -114,6 +133,7 @@ def load_settings() -> dict:
 
 
 def save_settings(data: dict):
+    ensure_data_dir()
     with open(SETTINGS_FILE, "w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False, indent=1)
 
@@ -539,6 +559,7 @@ def _load_cache() -> dict:
 
 def _save_cache(cache: dict):
     try:
+        ensure_data_dir()
         with open(CACHE_FILE, "w", encoding="utf-8") as fh:
             json.dump(cache, fh, ensure_ascii=False, indent=1)
     except Exception:
@@ -813,14 +834,39 @@ def matching_subs(folder: str, video_name: str, all_files: list[str]):
 
 
 def safe_rename(folder: str, pairs: list[tuple[str, str]]):
-    """Rename old->new in two phases so swaps (A->B, B->A) never collide."""
-    temps = []
-    for i, (old, new) in enumerate(pairs):
-        tmp = f"__epf_tmp_{i}__{os.path.splitext(old)[1]}"
-        os.rename(os.path.join(folder, old), os.path.join(folder, tmp))
-        temps.append((tmp, new))
-    for tmp, new in temps:
-        os.rename(os.path.join(folder, tmp), os.path.join(folder, new))
+    """Rename old->new in two phases so swaps (A->B, B->A) never collide.
+    All or nothing: if one file can't be renamed (for example it's open in a video player),
+    every file that was already renamed gets its old name back and nothing changes."""
+    def path(name):
+        return os.path.join(folder, name)
+
+    done, current = [], None          # done = (from, to) steps that worked, in order
+    try:
+        temps = []
+        for i, (old, new) in enumerate(pairs):
+            current = old
+            tmp = f"__epf_tmp_{os.getpid()}_{i}__{os.path.splitext(old)[1]}"
+            os.rename(path(old), path(tmp))
+            done.append((old, tmp))
+            temps.append((tmp, new, old))
+        for tmp, new, old in temps:
+            current = old
+            os.rename(path(tmp), path(new))
+            done.append((tmp, new))
+    except OSError as e:
+        stuck = []
+        for src, dst in reversed(done):  # put everything back
+            try:
+                os.rename(path(dst), path(src))
+            except OSError:
+                stuck.append(dst)
+        reason = e.strerror or str(e)
+        if stuck:
+            raise EFError("err_rename_stuck",
+                          f"Couldn't rename {current} ({reason}), and couldn't put back: {stuck[0]}",
+                          name=current, stuck=stuck[0]) from e
+        raise EFError("err_rename_failed", f"Couldn't rename {current} ({reason}). Nothing was changed. "
+                      "If it's open in a video player, close it and try again.", name=current) from e
 
 
 # ---------- History (every rename and every file sent to the Recycle Bin) ----------
@@ -837,6 +883,7 @@ def load_history() -> list[dict]:
 
 
 def _save_history(entries: list[dict]):
+    ensure_data_dir()
     tmp = HISTORY_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(entries[-HISTORY_MAX:], fh, ensure_ascii=False, indent=1)
@@ -969,12 +1016,24 @@ def send_to_recycle_bin(paths: list[str]):
         import ctypes
         from ctypes import wintypes
 
+        # USB sticks, SD cards and network drives have no Recycle Bin: Windows would delete
+        # the file for good, so refuse instead of losing an episode.
+        for p in paths:
+            drive = os.path.splitdrive(os.path.abspath(p))[0]
+            if drive.startswith("\\\\") or ctypes.windll.kernel32.GetDriveTypeW(drive + "\\") != 3:  # 3 = fixed disk
+                raise EFError("err_no_recycle", "This drive has no Recycle Bin, so nothing was deleted. "
+                              f"Delete the file yourself if you're sure: {os.path.basename(p)}",
+                              name=os.path.basename(p))
+
         class SHFILEOPSTRUCTW(ctypes.Structure):
             _fields_ = [("hwnd", wintypes.HWND), ("wFunc", wintypes.UINT), ("pFrom", wintypes.LPCWSTR),
                         ("pTo", wintypes.LPCWSTR), ("fFlags", ctypes.c_uint16), ("fAnyOperationsAborted", wintypes.BOOL),
                         ("hNameMappings", ctypes.c_void_p), ("lpszProgressTitle", wintypes.LPCWSTR)]
         buf = ctypes.create_unicode_buffer("\0".join(os.path.abspath(p) for p in paths) + "\0\0")
-        op = SHFILEOPSTRUCTW(None, 3, ctypes.cast(buf, wintypes.LPCWSTR), None, 0x40 | 0x10 | 0x4 | 0x400, False, None, None)
+        # FO_DELETE with ALLOWUNDO | NOCONFIRMATION | SILENT | NOERRORUI | WANTNUKEWARNING:
+        # if Windows still can't recycle a file, it asks before deleting it for good.
+        flags = 0x40 | 0x10 | 0x4 | 0x400 | 0x4000
+        op = SHFILEOPSTRUCTW(None, 3, ctypes.cast(buf, wintypes.LPCWSTR), None, flags, False, None, None)
         result = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
         left = [p for p in paths if os.path.exists(p)]
         if result != 0 or op.fAnyOperationsAborted or left:
@@ -1262,6 +1321,7 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
         pass
+    init()
     args = [a for a in sys.argv[1:] if a != "--undo"]
     if not args:
         args = [os.getcwd()]

@@ -1,6 +1,6 @@
 """
 Episode detection on real, messy file names (60 files from 10 shows).
-Run:  python tests/test_detection.py
+Run:  python -m pytest   (all tests)   or   python tests/test_detection.py   (this one, with a report)
 """
 import os
 import sys
@@ -95,6 +95,10 @@ def main():
                 print(f"FAIL  {show}: {name} -> {got}, expected {expected}")
     print(f"{ok}/{total} detected correctly")
     return ok == total
+
+
+def test_all_shows_detected():
+    assert main()
 
 
 if __name__ == "__main__":

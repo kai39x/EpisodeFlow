@@ -1,0 +1,64 @@
+name: CI
+
+# Every push and pull request: run the tests.
+# A version tag (v1.2.3): also build EpisodeFlow.exe and attach it, with its SHA256,
+# to that release (a draft release is made if there isn't one yet).
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - run: python -m pyflakes src tests
+      - run: python -m pytest
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tag matches VERSION in the code
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path src/episodeflow.py -Pattern 'VERSION = "([0-9.]+)"').Matches[0].Groups[1].Value
+          if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} but the code says $version" }
+      - name: Build
+        shell: cmd
+        run: .\build.bat nopause
+      - name: SHA256
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash release/EpisodeFlow.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  EpisodeFlow.exe" | Set-Content -Encoding ascii -NoNewline release/EpisodeFlow.exe.sha256
+          "SHA256: $hash" >> $env:GITHUB_STEP_SUMMARY
+      - name: Attach to the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag release/EpisodeFlow.exe release/EpisodeFlow.exe.sha256 --clobber
+          } else {
+            gh release create $tag release/EpisodeFlow.exe release/EpisodeFlow.exe.sha256 --draft `
+              --title "EpisodeFlow $($tag.TrimStart('v'))" --notes "See CHANGELOG.md for what changed."
+          }

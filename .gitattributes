@@ -1,0 +1,3 @@
+# GitHub shows the project as Python: the window's HTML is part of the app, not the main language
+src/*.html linguist-detectable=false
+*.bat text eol=crlf

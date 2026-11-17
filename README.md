@@ -82,6 +82,8 @@ Windows 10 or 11.
 
 > **"Windows protected your PC"?** EpisodeFlow is free and not code-signed, so Windows warns about it the first time. Click **More info**, then **Run anyway**.
 
+Want to check the download? Each release lists the SHA256 of `EpisodeFlow.exe`. Compare it with `certutil -hashfile EpisodeFlow.exe SHA256`.
+
 **Renaming:**
 1. Drag an anime folder onto the window, click **Choose folder**, or right-click a folder → **Send to → EpisodeFlow**.
 2. Check the new names. Click any file to change its season or episode.
@@ -91,13 +93,15 @@ Windows 10 or 11.
 
 Tip: name each folder after the anime (`Sousou no Frieren`, not `SNF`), so AniList finds the right show. One folder can hold several seasons.
 
+Language: the window opens in English. The **عربي** button at the top switches it to Arabic, and your choice is remembered.
+
 ---
 
 ## Remove it
 
 Open EpisodeFlow → **Settings** → **Remove from this PC**. It removes its shortcuts, your history and settings, and `EpisodeFlow.exe` itself.
 
-**Your anime files are never touched**: renamed files keep their new names.
+**Your anime files are never touched**: renamed files keep their new names. Poster folder icons you set stay too. To remove one, open that show and press **Remove folder icon** before removing EpisodeFlow.
 
 <details>
 <summary>Removing it by hand</summary>
@@ -105,6 +109,7 @@ Open EpisodeFlow → **Settings** → **Remove from this PC**. It removes its sh
 1. Delete `EpisodeFlow.exe`.
 2. Delete the EpisodeFlow shortcut from the Desktop, and from Send To (`Win + R` → `shell:sendto`).
 3. Delete your data: `Win + R` → `%LOCALAPPDATA%\EpisodeFlow`.
+4. Folder icons (optional): in each anime folder, show hidden files and delete `desktop.ini` and `EpisodeFlow-….ico`.
 
 </details>
 
@@ -120,9 +125,15 @@ Anime data and posters come from [AniList](https://anilist.co). EpisodeFlow is n
 
 ## Build from source
 
-Needs Python 3 on Windows. Run `build.bat`: it installs the build tools (PyInstaller and pywebview) and creates `release\EpisodeFlow.exe`.
+Needs **Python 3.10 or newer** on Windows. Run `build.bat`: it puts the build tools from `requirements-build.txt` (PyInstaller and pywebview, pinned versions) into a `.venv` folder next to it, without touching your own Python, and creates `release\EpisodeFlow.exe`.
 
-You can also run it straight from the source with `python src\episodeflow_gui.py`, and check the episode detection with `python tests\test_detection.py`.
+You can also run it straight from the source with `python src\episodeflow_gui.py`.
+
+**Tests:** `python -m pip install -r requirements-dev.txt`, then `python -m pytest`. They cover episode detection, AniList seasons and parts (with a fake AniList, so nothing goes online), renaming, undo and the file name formats. GitHub Actions runs them on every push. On a version tag it also builds `EpisodeFlow.exe` and attaches it to the release with its SHA256.
+
+## Changes
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

@@ -9,6 +9,7 @@ Starts a small local server (only reachable from this PC) and shows it in a wind
 """
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -17,7 +18,6 @@ import threading
 import time
 import traceback
 import struct
-import tempfile
 import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -233,16 +233,18 @@ def act(path: str, data: dict):
             raise err
         return state_view()
     if path == "/api/apply_ready":
-        done, total = [], 0
+        done, failed, total = [], [], 0
         for s in list(STATE.shows):
             if s.plan and ef.plan_status(s.plan) == "ready":
                 try:
                     total += ef.apply_plan(s.plan)
                     done.append(s.name)
                 except Exception as e:
-                    s.error = str(e)
+                    if not isinstance(e, ef.EFError):
+                        log_error()
+                    failed.append(s.name)
                 STATE.analyze(s)
-        return {**state_view(), "renamed": total, "renamed_shows": done}
+        return {**state_view(), "renamed": total, "renamed_shows": done, "failed_shows": failed}
     if path == "/api/undo_entry":
         n = ef.undo_entry(int(data["entry"]))
         for s in list(STATE.shows):
@@ -391,9 +393,14 @@ def remove_from_pc():
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
     if mode == "portable":
         portable_shortcuts("remove")
-        cmd = (f'ping -n 6 127.0.0.1 >nul & del /f /q "{sys.executable}" & '
-               f'rmdir /s /q "{ef.DATA_DIR}"')
-        subprocess.Popen(["cmd", "/c", cmd], creationflags=flags, close_fds=True)
+        # Delete only EpisodeFlow's own files by name, then the data folder if nothing else is in it.
+        # Never a whole folder by path: if the data folder ever pointed somewhere else, nothing else is lost.
+        data = ef.DATA_DIR
+        steps = ["ping -n 6 127.0.0.1 >nul", f'del /f /q "{sys.executable}"']
+        steps += [f'del /f /q "{os.path.join(data, f)}"' for f in ef.DATA_FILES]
+        steps += [f'rmdir /s /q "{os.path.join(data, d)}"' for d in ef.DATA_DIRS]
+        steps.append(f'rmdir "{data}"')                  # no /s: only removed when empty
+        subprocess.Popen(["cmd", "/c", " & ".join(s + " 2>nul" for s in steps)], creationflags=flags, close_fds=True)
     else:
         raise ef.EFError("err_remove_dev", "Running from the source files: just delete the folder.")
     log_note(f"remove requested ({mode})")
@@ -424,15 +431,17 @@ def download_cover(url: str) -> tuple[bytes, str]:
     if url in _COVER_CACHE:
         return _COVER_CACHE[url]
     last = None
-    for ua in ("EpisodeFlow/0.1", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"):
+    for attempt in range(2):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": ua if ua != "EpisodeFlow/0.1" else ef.USER_AGENT})
+            req = urllib.request.Request(url, headers={"User-Agent": ef.USER_AGENT})
             with urllib.request.urlopen(req, timeout=20) as resp:
                 data, ctype = resp.read(), resp.headers.get("Content-Type", "image/jpeg")
             _COVER_CACHE[url] = (data, ctype)
             return data, ctype
         except Exception as e:
             last = e
+            if attempt == 0:
+                time.sleep(1)
     log_note(f"cover download failed for {url}: {last!r}")
     raise ef.EFError("err_icon_download", "Couldn't download the picture from AniList.")
 
@@ -494,27 +503,83 @@ def has_folder_icon(folder: str) -> bool:
 
 
 def _ini_text(path: str) -> str:
-    raw = open(path, "rb").read()
+    with open(path, "rb") as fh:
+        raw = fh.read()
     if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
-        return raw.decode("utf-16", "ignore")
-    return raw.decode("utf-8", "ignore")
+        text = raw.decode("utf-16", "ignore")
+    else:
+        text = raw.decode("utf-8", "ignore").lstrip("\ufeff")
+    return text.replace("\r\r\n", "\r\n")   # version 1.1.0 and older wrote \r\r\n
+
+
+# desktop.ini can hold other things too (a folder's display name, view settings...): only these
+# keys are ours. EpisodeFlowReadOnly remembers whether the folder was read-only before ("kept")
+# or EpisodeFlow made it read-only ("set"), so removing the icon puts it back the way it was.
+_OUR_KEYS = ("iconresource", "iconfile", "iconindex", "episodeflowreadonly")
+
+
+def _split_ini(text: str) -> tuple[list[str], str | None]:
+    """The desktop.ini lines without our icon keys, and our read-only marker (None if there is none)."""
+    kept, marker, section = [], None, ""
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("[") and s.endswith("]"):
+            section = s.lower()
+        elif section == "[.shellclassinfo]" and "=" in s:
+            key, _, value = s.partition("=")
+            if key.strip().lower() in _OUR_KEYS:
+                if key.strip().lower() == "episodeflowreadonly":
+                    marker = value.strip()
+                continue
+        kept.append(line)
+    return kept, marker
+
+
+def _join_ini(lines: list[str], ours: list[str]) -> str:
+    out, placed = [], False
+    for line in lines:
+        out.append(line)
+        if not placed and line.strip().lower() == "[.shellclassinfo]":
+            out += ours
+            placed = True
+    if not placed and ours:
+        out = ["[.ShellClassInfo]", *ours, *out]
+    return "\r\n".join(out).rstrip() + "\r\n"
+
+
+def _ini_is_empty(lines: list[str]) -> bool:
+    return all(not s.strip() or s.strip().lower() == "[.shellclassinfo]" for s in lines)
+
+
+def _write_ini(path: str, text: str):
+    with open(path, "w", encoding="utf-16", newline="") as fh:   # UTF-16 with BOM, as Explorer writes it
+        fh.write(text)
 
 
 def set_folder_icon(folder: str, pngs: dict[int, bytes], refresh: bool = True):
     ini = os.path.join(folder, "desktop.ini")
+    lines, marker = [], None
     if os.path.exists(ini):
         text = _ini_text(ini)
-        if "IconResource" in text and ICON_PREFIX not in text:
+        if re.search(r"(?im)^\s*Icon(?:Resource|File)\s*=", text) and ICON_PREFIX not in text:
             raise ef.EFError("err_icon_custom", "This folder already has its own icon, so it was left alone.")
+        lines, marker = _split_ini(text)
+        if marker is None and ICON_PREFIX in text:
+            marker = "set"                           # icon from version 1.1.0 or older, which always set it
+    if marker is None:
+        marker = "kept" if (os.name == "nt" and _get_attrs(folder) & 0x1) else "set"
     old = _icon_files(folder)
-    name = f"{ICON_PREFIX}-{int(time.time())}.ico"
+    stamp = int(time.time())
+    while os.path.exists(os.path.join(folder, f"{ICON_PREFIX}-{stamp}.ico")):   # set twice in one second
+        stamp += 1
+    name = f"{ICON_PREFIX}-{stamp}.ico"
     ico = os.path.join(folder, name)
     if os.name == "nt" and os.path.exists(ini):
         _set_attrs(ini, 0x80)                        # normal, so it can be overwritten
     with open(ico, "wb") as fh:
         fh.write(make_ico(pngs))
-    with open(ini, "w", encoding="utf-16") as fh:    # UTF-16 with BOM, as Explorer writes it
-        fh.write(f"[.ShellClassInfo]\r\nIconResource={name},0\r\nIconFile={name}\r\nIconIndex=0\r\n")
+    _write_ini(ini, _join_ini(lines, [f"IconResource={name},0", f"IconFile={name}", "IconIndex=0",
+                                      f"EpisodeFlowReadOnly={marker}"]))
     for f in old:                                    # remove earlier icons of ours
         p = os.path.join(folder, f)
         if f != name:
@@ -543,11 +608,18 @@ def remove_folder_icon(folder: str):
         if os.name == "nt":
             _set_attrs(p, 0x80)
         os.remove(p)
+    marker = None
     if os.path.exists(ini) and ICON_PREFIX in _ini_text(ini):
+        lines, marker = _split_ini(_ini_text(ini))
         if os.name == "nt":
             _set_attrs(ini, 0x80)
-        os.remove(ini)
-    if os.name == "nt":
+        if _ini_is_empty(lines):
+            os.remove(ini)
+        else:                                        # keep whatever else was in desktop.ini
+            _write_ini(ini, _join_ini(lines, []))
+            if os.name == "nt":
+                _set_attrs(ini, 0x2 | 0x4)
+    if os.name == "nt" and marker != "kept":         # read-only only if EpisodeFlow made it so
         _set_attrs(folder, _get_attrs(folder) & ~0x1)
     refresh_explorer([folder])
     log_note(f"icon removed: {folder}")
@@ -691,7 +763,7 @@ def open_window(url: str):
     browser = find_browser()
     if browser:
         w, h = window_size()
-        profile = os.path.join(os.environ.get("LOCALAPPDATA", HERE), "EpisodeFlow", "window")
+        profile = os.path.join(ef.DATA_DIR, "window")
         subprocess.Popen([browser, f"--app={url}", f"--window-size={w},{h}", "--window-position=10,0",
                           f"--user-data-dir={profile}",
                           "--no-first-run", "--no-default-browser-check", "--disable-features=Translate"])
@@ -732,7 +804,7 @@ def run_app_window(url: str) -> bool:
         return False
     w, h = window_size()
     try:
-        window = webview.create_window(f"EpisodeFlow", url, width=w, height=h, min_size=(860, 560))
+        window = webview.create_window("EpisodeFlow", url, width=w, height=h, min_size=(860, 560))
         WEBVIEW["window"] = window
         # not private, so the chosen language is remembered between runs
         webview.start(_bind_drop, window, private_mode=False,
@@ -746,6 +818,7 @@ def run_app_window(url: str) -> bool:
 
 def log_error():
     try:
+        ef.ensure_data_dir()
         with open(LOG_FILE, "a", encoding="utf-8") as fh:
             fh.write(time.strftime("\n[%Y-%m-%d %H:%M:%S]\n") + traceback.format_exc())
     except Exception:
@@ -754,6 +827,7 @@ def log_error():
 
 def log_note(msg: str):
     try:
+        ef.ensure_data_dir()
         with open(LOG_FILE, "a", encoding="utf-8") as fh:
             fh.write(time.strftime("[%Y-%m-%d %H:%M:%S] ") + msg + "\n")
     except Exception:
@@ -774,10 +848,11 @@ def main(open_ui=True):
     SERVER = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     url = f"http://127.0.0.1:{SERVER.server_address[1]}/?t={TOKEN}"
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    migrated = ef.init()
     if app_mode() == "portable" and ef.load_settings().get("shortcuts") == "yes":
         threading.Thread(target=lambda: portable_shortcuts("fix"), daemon=True).start()
-    if ef.MIGRATED:
-        log_note(f"moved old data next to the program into {ef.DATA_DIR}: {', '.join(ef.MIGRATED)}")
+    if migrated:
+        log_note(f"moved old data next to the program into {ef.DATA_DIR}: {', '.join(migrated)}")
     if args:
         err = STATE.open(args)
         if err:
