@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.2
+
+Fixes:
+- **Season folders.** In `Frieren/Season 1`, `Frieren/Season 2`, files were renamed to `Show - S01E01` because the season folder had no show name in it. The show's name now comes from the folder above, and `Specials` / `Extras` / `Season 0` folders go to Season 0. They're also found when you open the folder above the show. In the list they show as `Frieren · Season 2`.
+- **Names that only change upper/lower case** (`frieren` folder, `Frieren - S01E01.mkv`) stopped with "A file with this name already exists". Renaming and undo now work.
+- **Version tags stuck to the number** (`S01E05v2`, `E05v2`, `05v2`) weren't read at all. Now they are.
+- **Double episodes** (`S01E05-E06`, `S01E05E06`) were either not read or renamed to `S01E05` only. They're now named `S01E05-E06` and both count as present.
+- **Copies and quality marks.** `Frieren - 05 (1).mkv` (a Windows copy) was renamed next to the original as `S01E05 (1)` instead of being shown as a duplicate, and `[Group] Show - 01 (1080p).mkv` kept ` (1080p)` in its new name. Only copies you kept on purpose keep their mark now.
+- **Subtitles** like `Ep.v2.srt` could be matched to both `Ep.mkv` and `Ep.v2.mkv`. Each subtitle now goes with one video only.
+- **Undo from the "Renamed" message** undid the show you were looking at, not the one you'd just renamed, if you switched shows within those seconds.
+- Opening another folder while one was still being read could mark the new one as finished too early.
+- When AniList can't be reached, an older saved answer is used instead of counting from the folder. Saved answers older than 60 days are cleared.
+- Japanese / Chinese episode numbers like `第05話` are read.
+
 ## 1.1.1
 
 Safety fixes:

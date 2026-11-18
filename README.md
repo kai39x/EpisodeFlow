@@ -54,6 +54,8 @@ Five themes in **Settings → Appearance**: Match Windows, Light, Dark, **OLED**
 
 ### Everything else
 - **Many shows at once:** open a folder that has anime folders inside, and rename all the ready ones in one go.
+- **Season folders:** `Frieren/Season 1`, `Frieren/Season 2` and `Frieren/Specials` are read as one show, with the right season for each.
+- **Double episodes:** a file with two episodes in it is named `S01E05-E06`, the way Plex and Jellyfin read it.
 - **Specials:** OVA, OAD, SP and `12.5` episodes go to Season 0.
 - **Subtitles follow:** `.srt`, `.ass` and `.ar.srt` files are renamed with their episode.
 - **History and undo:** every rename is kept, and any of them can be undone later.

@@ -20,7 +20,7 @@ import urllib.request
 import urllib.error
 from dataclasses import dataclass, field
 
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 REPO_URL = "https://github.com/kai39x/EpisodeFlow"
 USER_AGENT = f"EpisodeFlow/{VERSION}"
 
@@ -152,10 +152,15 @@ def validate_template(tpl: str) -> str:
     return ""
 
 
-def render_template(tpl: str, show: str, season: int, episode: int) -> str:
+def render_template(tpl: str, show: str, season: int, episode: int, episode_end: int | None = None) -> str:
+    """episode_end: a file with two episodes in it (S01E05-E06), named the way Plex and Jellyfin read it."""
+    ep2, ep = f"{episode:02d}", str(episode)
+    if episode_end and episode_end > episode:
+        ep2 += f"-E{episode_end:02d}" if "E{episode}" in tpl else f"-{episode_end:02d}"
+        ep += f"-{episode_end}"
     out = (tpl.replace("{show}", re.sub(r'[\\/:*?"<>|]', " ", show))
               .replace("{season}", f"{season:02d}").replace("{s}", str(season))
-              .replace("{episode}", f"{episode:02d}").replace("{e}", str(episode)))
+              .replace("{episode}", ep2).replace("{e}", ep))
     return re.sub(r"\s+", " ", out).strip(" .")
 
 
@@ -196,6 +201,7 @@ def clean(name: str) -> str:
     s = re.sub(r"\[[^\]]*\]|\([^)]*\)",
                lambda m: m.group()[1:-1] if re.fullmatch(r"[\[(]\s*\d{1,3}\s*[\])]", m.group()) else " ", s)
     s = re.sub(r"[._]", " ", s)
+    s = re.sub(r"(?<=\d)v\d{1,2}\b", "", s, flags=re.I)  # version tags stuck to the number: 05v2, S01E05v2
     s = JUNK_RE.sub(" ", s)
     s = re.sub(r"\b[0-9a-f]{8}\b", " ", s, flags=re.I)  # loose CRC hashes
     return re.sub(r"\s+", " ", s).strip()
@@ -205,6 +211,8 @@ def clean(name: str) -> str:
 # 2) Detection of a single file
 # ======================================================================
 ROMAN = {"ii": 2, "iii": 3, "iv": 4, "v": 5}
+# Two episodes in one file: S01E05-E06, S01E05E06, S01E05-06
+RANGE_SE = re.compile(r"\bS(\d{1,2})\s*-?\s*E[Pp]?\s*(\d{1,4})(?:-?E|-)(\d{1,4})\b", re.I)
 PATTERNS_SE = [
     re.compile(r"\bS(\d{1,2})\s*-?\s*E[Pp]?\s*(\d{1,4})\b", re.I),  # S01E05, S4 E21
     re.compile(r"\b(\d{1,2})x(\d{1,3})\b", re.I),                    # 4x22
@@ -219,6 +227,7 @@ SEASON_PATTERNS = [
 EPISODE_PATTERNS = [
     re.compile(r"\b(?:Episode|Ep|E)\s*(\d{1,4})\b", re.I),  # Episode 09, Ep 08, E22
     re.compile(r"(?:^|\s)-\s*(\d{1,4})(?!\d)"),             # " - 05", " - 04-"
+    re.compile(r"第\s*(\d{1,4})\s*[話话集]"),                  # Japanese / Chinese: 第05話
 ]
 PART_PATTERNS = [
     re.compile(r"\b(?:Part|Cour)\s*(\d)\b", re.I),
@@ -281,6 +290,8 @@ class Result:
     suffix: str = ""                  # " (1080p)" when you keep two copies of one episode
     note_keys: list = field(default_factory=list)
     info_keys: list = field(default_factory=list)
+    episode_end: int | None = None    # last episode of a double-episode file (S01E05-E06)
+    raw_episode_end: int | None = None
 
 
 def find_season(text: str):
@@ -294,8 +305,9 @@ def find_season(text: str):
 
 def detect(name: str) -> Result:
     r = detect_core(name)
-    r.raw_episode = r.episode
-    # A copy you chose to keep earlier: "Show - S03E09 (1080p).mkv" keeps its " (1080p)"
+    r.raw_episode, r.raw_episode_end = r.episode, r.episode_end
+    # A copy you chose to keep earlier: "Show - S03E09 (1080p).mkv" keeps its " (1080p)".
+    # analyze() drops it again if the rest of the name isn't one EpisodeFlow made.
     m = re.search(r"\d( \((?:4K|1440p|1080p|720p|480p|\d{1,2})\))$", os.path.splitext(name)[0])
     if m:
         r.suffix = m.group(1)
@@ -340,6 +352,11 @@ def detect_core(name: str) -> Result:
             r.confidence = "medium"
         return r
 
+    m = RANGE_SE.search(s)
+    if m and 1 <= int(m.group(3)) - int(m.group(2)) <= 3:
+        r.season, r.episode, r.episode_end = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        r.season_explicit, r.special = True, int(m.group(1)) == 0
+        return r
     for p in PATTERNS_SE:
         m = p.search(s)
         if m:
@@ -557,11 +574,18 @@ def _load_cache() -> dict:
         return {}
 
 
+CACHE_KEEP_DAYS = 60    # older entries are dropped, so the file doesn't grow forever
+
+
 def _save_cache(cache: dict):
     try:
         ensure_data_dir()
-        with open(CACHE_FILE, "w", encoding="utf-8") as fh:
+        oldest = time.time() - CACHE_KEEP_DAYS * 86400
+        cache = {k: v for k, v in cache.items() if isinstance(v, dict) and v.get("time", 0) >= oldest}
+        tmp = CACHE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(cache, fh, ensure_ascii=False, indent=1)
+        os.replace(tmp, CACHE_FILE)
     except Exception:
         pass
 
@@ -594,18 +618,26 @@ class AniListLookup:
     def _load(self):
         self._done = True
         cache = _load_cache() if self.use_cache else {}
+        stale = None            # an older saved answer, used if AniList can't be reached
         for term in title_candidates(self.show, self.files):
             key = term.lower()
             hit = cache.get(key)
-            airing = hit and any(e["episodes"] is None for e in hit.get("labels", []))
+            if not (isinstance(hit, dict) and hit.get("v") == CACHE_VERSION and hit.get("labels")):
+                hit = None
+            airing = hit and any(e["episodes"] is None for e in hit["labels"])
             max_age = (CACHE_DAYS_AIRING if airing else CACHE_DAYS) * 86400
-            if hit and hit.get("v") == CACHE_VERSION and time.time() - hit["time"] < max_age:
+            if hit and time.time() - hit["time"] < max_age:
                 self.labels, self.status = hit["labels"], f"AniList (saved): {hit['labels'][0]['title']}"
                 self.status_key = "saved"
                 return
+            stale = stale or hit
             try:
                 chain = fetch_chain(term, self.post or _anilist_post)
             except Exception:
+                if stale:
+                    self.labels, self.status = stale["labels"], f"AniList (saved earlier): {stale['labels'][0]['title']}"
+                    self.status_key = "saved"
+                    return
                 self.status = "AniList: couldn't connect, counting from the folder instead"
                 self.status_key = "offline"
                 return
@@ -681,13 +713,30 @@ class AniListLookup:
 # ======================================================================
 # 3) Folder-level logic
 # ======================================================================
-def show_from_folder(folder: str) -> str:
-    """Folder name -> show name ("Grand Blue Season 3" -> "Grand Blue")."""
-    s = os.path.basename(os.path.normpath(folder))
-    s = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", s)
+_SPECIALS_FOLDER = re.compile(r"^(?:specials?|extras?|ova|oad|sp|season\s*0+|s0+)$", re.I)
+
+
+def folder_words(name: str) -> str:
+    s = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", name)
     s = re.sub(r"[._]", " ", s)
     s = re.sub(r"\b(?:Season\s*\d+|S\d{1,2}|\d+(?:st|nd|rd|th)\s+Season|Part\s*\d+)\b", " ", s, flags=re.I)
-    s = re.sub(r"\s+", " ", s).strip(" -")
+    return re.sub(r"\s+", " ", s).strip(" -")
+
+
+def is_specials_folder(folder: str) -> bool:
+    """'Specials', 'Extras', 'OVA', 'Season 0'... inside a show's folder."""
+    name = re.sub(r"[._]", " ", os.path.basename(os.path.normpath(folder))).strip()
+    return bool(_SPECIALS_FOLDER.match(name))
+
+
+def show_from_folder(folder: str) -> str:
+    """Folder name -> show name ("Grand Blue Season 3" -> "Grand Blue").
+    A folder that is only a season ("Season 2", "S02", "Specials") inside the show's folder
+    takes the show's name from the folder above it: "Frieren/Season 2" -> "Frieren"."""
+    folder = os.path.normpath(folder)
+    s = "" if is_specials_folder(folder) else folder_words(os.path.basename(folder))
+    if not s:
+        s = folder_words(os.path.basename(os.path.dirname(folder)))
     return s or "Show"
 
 
@@ -732,8 +781,9 @@ def resolve_batch(files: list[str], folder_season: int | None = None, lookup=Non
             add_note(r, "season_neighbours", s=best)
             if r.part and r.part >= 2:
                 r.confidence = "medium"  # 'Part 2' with no season is ambiguous
-        elif folder_season:
+        elif folder_season is not None:
             r.season = folder_season
+            r.special = folder_season == 0         # a "Specials" folder
             add_note(r, "season_folder", s=folder_season)
         else:
             r.season = 1
@@ -772,7 +822,7 @@ def apply_part_offsets(results: list[Result], lookup=None):
                 if first > known:
                     continue  # numbered continuously already
                 for r in group:
-                    r.episode = r.raw_episode + known
+                    _shift(r, known)
                     add_note(r, "part_anilist", info=True, p=part, n=known)
                 continue
             if not earlier:
@@ -784,9 +834,22 @@ def apply_part_offsets(results: list[Result], lookup=None):
                 continue  # already numbered continuously (13, 14...), nothing to do
             offset = max(earlier)
             for r in group:
-                r.episode = r.raw_episode + offset
+                _shift(r, offset)
                 r.confidence = "medium"
                 add_note(r, "part_folder", p=part, n=offset, q=part - 1)
+
+
+def _shift(r: Result, offset: int):
+    """Episode number = the number in the name + offset (both ends of a double episode)."""
+    r.episode = r.raw_episode + offset
+    r.episode_end = r.raw_episode_end + offset if r.raw_episode_end else None
+
+
+def episodes_of(r: Result) -> list[int]:
+    """Every episode a file holds: [5] or, for a double episode, [5, 6]."""
+    if r.episode is None:
+        return []
+    return list(range(r.episode, (r.episode_end or r.episode) + 1))
 
 
 def mark_conflicts(results: list[Result]) -> int:
@@ -797,7 +860,7 @@ def mark_conflicts(results: list[Result]) -> int:
         if r.episode is None or r.skipped:
             continue
         # same final name = conflict (also catches formats without a season: S1E01 and S2E01 -> "Show - 01")
-        key = (render_template(TEMPLATE, "x", r.season, r.episode).lower(), r.suffix)
+        key = (render_template(TEMPLATE, "x", r.season, r.episode, r.episode_end).lower(), r.suffix)
         if key in seen:
             r.conflict = seen[key].conflict = True
         seen[key] = r
@@ -805,7 +868,7 @@ def mark_conflicts(results: list[Result]) -> int:
 
 
 def new_base(r: Result, show: str) -> str:
-    return render_template(TEMPLATE, show, r.season, r.episode)
+    return render_template(TEMPLATE, show, r.season, r.episode, r.episode_end)
 
 
 def set_template(tpl: str):
@@ -824,11 +887,16 @@ def set_template(tpl: str):
 # 4) Renaming (with subtitles, two-phase, undo)
 # ======================================================================
 def matching_subs(folder: str, video_name: str, all_files: list[str]):
-    """Subs that share the video's base name: 'x.srt', 'x.ar.srt', 'x.en.ass'..."""
+    """Subs that share the video's base name: 'x.srt', 'x.ar.srt', 'x.en.ass'...
+    A subtitle belongs to one video only: 'Ep.v2.srt' goes with 'Ep.v2.mkv', not with 'Ep.mkv'."""
     base = os.path.splitext(video_name)[0]
+    other_bases = [os.path.splitext(f)[0] for f in all_files
+                   if f != video_name and os.path.splitext(f)[1].lower() in VIDEO_EXTS]
     out = []
     for f in all_files:
         if os.path.splitext(f)[1].lower() in SUB_EXTS and f.startswith(base + "."):
+            if any(len(b) > len(base) and f.startswith(b + ".") for b in other_bases):
+                continue            # a video with a longer matching name owns it
             out.append((f, f[len(base):]))  # suffix like ".ar.srt"
     return out
 
@@ -911,8 +979,9 @@ def _reverse(folder: str, pairs: list):
     gone = [new for _, new in pairs if not os.path.exists(os.path.join(folder, new))]
     if gone:
         raise EFError("err_undo_moved", f"Can't undo: this file was moved or renamed since: {gone[0]}", name=gone[0])
-    news = {new for _, new in pairs}
-    taken = [old for old, _ in pairs if old not in news and os.path.exists(os.path.join(folder, old))]
+    news = {os.path.normcase(new) for _, new in pairs}      # Windows names ignore upper/lower case
+    taken = [old for old, _ in pairs
+             if os.path.normcase(old) not in news and os.path.exists(os.path.join(folder, old))]
     if taken:
         raise EFError("err_undo_taken", f"Can't undo: a file already has the old name: {taken[0]}", name=taken[0])
     safe_rename(folder, [(new, old) for old, new in pairs])
@@ -1084,9 +1153,21 @@ def analyze(folder: str, only: list[str] | None = None, post=None, use_cache=Tru
     if only:
         videos = [f for f in videos if f in only]
     show = show_from_folder(folder)
-    folder_season = find_season(clean(os.path.basename(os.path.normpath(folder))) + " ")
+    if is_specials_folder(folder):
+        folder_season = 0
+    else:
+        folder_season = find_season(clean(os.path.basename(os.path.normpath(folder))) + " ")
     lookup = AniListLookup(show, videos, post=post, use_cache=use_cache) if (online and videos) else None
     results = resolve_batch(videos, folder_season, lookup)
+    # " (1080p)" / " (2)" at the end only means "a copy you kept" when the rest of the name is one
+    # EpisodeFlow made. In a download ("[Group] Show - 01 (1080p)") or a Windows copy ("Show - 05 (1)")
+    # it's dropped, so the copy shows up as a duplicate instead of being renamed next to the original.
+    for r in results:
+        if r.suffix and r.episode is not None:
+            base = os.path.splitext(r.original)[0][:-len(r.suffix)]
+            if base.lower() != new_base(r, show).lower():
+                r.suffix = ""
+    mark_conflicts(results)
     plan = ShowPlan(folder, show, folder_season, all_files, results, lookup, sorted(results, key=_sort_key))
     for f in all_files:
         try:
@@ -1135,8 +1216,9 @@ def apply_plan(plan: ShowPlan) -> int:
     pairs = plan_pairs(plan)
     if not pairs:
         return 0
-    sources = {o for o, _ in pairs}
-    clashes = [n for _, n in pairs if os.path.exists(os.path.join(plan.folder, n)) and n not in sources]
+    sources = {os.path.normcase(o) for o, _ in pairs}   # Windows names ignore upper/lower case
+    clashes = [n for _, n in pairs
+               if os.path.exists(os.path.join(plan.folder, n)) and os.path.normcase(n) not in sources]
     if clashes:
         raise EFError("err_exists", f"A file with this name already exists: {clashes[0]}", name=clashes[0])
     safe_rename(plan.folder, pairs)
@@ -1156,6 +1238,8 @@ def edit_result(r: Result, season: int | None, episode: int | None, skip: bool =
         r.season = season
         r.special = season == 0
     if episode is not None:
+        if r.episode_end and r.episode is not None:          # a double episode keeps its length
+            r.episode_end = episode + (r.episode_end - r.episode)
         r.episode = episode
     r.season_explicit, r.confidence, r.suffix = True, "high", ""
     reset_notes(r)
@@ -1171,8 +1255,8 @@ def missing_episodes(plan: ShowPlan) -> list[dict]:
     seasons = sorted({r.season for r in plan.results
                       if r.episode is not None and not r.skipped and not r.special and r.season})
     for s in seasons:
-        have = sorted({r.episode for r in plan.results
-                       if r.season == s and r.episode is not None and not r.skipped and not r.special})
+        have = sorted({e for r in plan.results
+                       if r.season == s and not r.skipped and not r.special for e in episodes_of(r)})
         parts = plan.lookup.season_parts(s) if plan.lookup else None
         total = sum(parts) if parts else None
         if total and max(have) <= total:
@@ -1217,20 +1301,34 @@ def storage_summary(plan: ShowPlan) -> dict:
 
 
 def find_show_folders(path: str) -> list[str]:
-    """A folder with episodes in it is one show; otherwise each sub-folder with episodes is a show."""
+    """A folder with episodes in it is one show; otherwise each sub-folder with episodes is a show.
+    Season folders count too: 'Frieren/Season 1', 'Frieren/Season 2', 'Frieren/Specials' each
+    become one entry, whether you open 'Frieren' or the folder above it."""
     def has_videos(p):
         try:
             return any(os.path.splitext(f)[1].lower() in VIDEO_EXTS for f in os.listdir(p))
         except OSError:
             return False
+
+    def subdirs(p):
+        try:
+            names = sorted(os.listdir(p), key=str.lower)
+        except OSError:
+            return []
+        return [os.path.join(p, d) for d in names if not d.startswith(".") and os.path.isdir(os.path.join(p, d))]
+
+    def season_dirs(p):
+        return [d for d in subdirs(p)
+                if (is_specials_folder(d) or not folder_words(os.path.basename(d))) and has_videos(d)]
+
     if has_videos(path):
-        return [path]
-    subs = []
-    for d in sorted(os.listdir(path), key=str.lower):
-        full = os.path.join(path, d)
-        if os.path.isdir(full) and not d.startswith(".") and has_videos(full):
-            subs.append(full)
-    return subs
+        return [path] + season_dirs(path)
+    out = []
+    for d in subdirs(path):
+        if has_videos(d):
+            out.append(d)
+        out += season_dirs(d)
+    return out
 
 
 # ======================================================================
@@ -1268,7 +1366,7 @@ def shift_part(target: Result, offset: int, results: list[Result]):
     else:
         group = [target]
     for r in group:
-        r.episode = r.raw_episode + offset
+        _shift(r, offset)
         r.skipped, r.confidence = False, "high"
         reset_notes(r)
         add_note(r, "shifted", n=offset)

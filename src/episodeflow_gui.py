@@ -49,6 +49,7 @@ class State:
         self.lock = threading.RLock()
         self.root, self.shows, self.busy, self.message = "", [], False, ""
         self.last_beat, self.seen_beat = time.time(), False
+        self.generation = 0                 # goes up every time a folder is opened
 
     def open(self, paths: list[str]):
         paths = [p for p in paths if p]
@@ -71,14 +72,19 @@ class State:
             self.root = paths[0] if len(paths) == 1 else f"{len(paths)} items"
             self.shows = [Show(i, f, only) for i, (f, only) in enumerate(shows)]
             self.busy = True
-        threading.Thread(target=self._analyze_all, daemon=True).start()
+            self.generation += 1
+            gen = self.generation
+        threading.Thread(target=self._analyze_all, args=(list(self.shows), gen), daemon=True).start()
         return None
 
-    def _analyze_all(self):
-        for show in list(self.shows):
+    def _analyze_all(self, shows: list, gen: int):
+        for show in shows:
+            if self.generation != gen:      # another folder was opened meanwhile: stop, it has its own run
+                return
             self.analyze(show)
         with self.lock:
-            self.busy = False
+            if self.generation == gen:
+                self.busy = False
 
     def analyze(self, show: Show):
         with self.lock:
@@ -86,8 +92,13 @@ class State:
         try:
             plan = ef.analyze(show.folder, show.only)
             status = ef.plan_status(plan)
+            base = os.path.basename(os.path.normpath(show.folder))
+            # "Season 2" inside "Frieren": show it as "Frieren · Season 2", so the seasons can be told apart
+            name = plan.show
+            if ef.is_specials_folder(show.folder) or not ef.folder_words(base):
+                name = f"{plan.show} · {base}"
             with self.lock:
-                show.plan, show.status, show.name = plan, status, plan.show
+                show.plan, show.status, show.name = plan, status, name
         except Exception as e:
             log_error()
             with self.lock:
@@ -134,7 +145,7 @@ def row_view(plan: ef.ShowPlan, i: int, r: ef.Result) -> dict:
         notes = [n for n in notes if n[0] in ("edited", "shifted", "kept_both")]
     subs = [s for s, _ in ef.matching_subs(plan.folder, r.original, plan.all_files)] if target else []
     return {"row": i, "original": r.original, "target": target, "mark": mark, "notes": notes,
-            "info": r.info_keys, "season": r.season, "episode": r.episode, "raw": r.raw_episode,
+            "info": r.info_keys, "season": r.season, "episode": r.episode, "episode_end": r.episode_end, "raw": r.raw_episode,
             "part": r.part, "special": r.special, "subs": subs, "suffix": r.suffix}
 
 
@@ -691,8 +702,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._authorized():
             return self._json({"error": "forbidden"}, 403)
-        length = int(self.headers.get("Content-Length") or 0)
-        data = json.loads(self.rfile.read(length) or b"{}")
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            data = json.loads(self.rfile.read(length) or b"{}")
+            if not isinstance(data, dict):
+                raise ValueError("expected a JSON object")
+        except ValueError:
+            return self._json({"error": "bad request"}, 400)
         path = urlparse(self.path).path
         if path == "/api/clientlog":
             log_note("window: " + str(data.get("msg", ""))[:500])

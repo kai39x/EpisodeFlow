@@ -1324,13 +1324,16 @@ async function applyShow() {
   const res = await api("/api/apply", { id: detail.id });
   if (res.error) { toast(errText(res)); $("#applyBtn").disabled = false; return; }
   detail = res.show; renderDetail();
-  toast(t("t_renamed", { n: res.renamed }), t("undo"), undoShow);
+  // the toast's Undo is for this show, even if you open another one before pressing it
+  const id = detail.id;
+  toast(t("t_renamed", { n: res.renamed }), t("undo"), () => undoShow(id));
   refreshState();
 }
-async function undoShow() {
-  const res = await api("/api/undo", { id: detail.id });
+async function undoShow(id) {
+  if (typeof id !== "number") id = detail.id;
+  const res = await api("/api/undo", { id });
   if (res.error) { toast(errText(res)); return; }
-  detail = res.show; renderDetail();
+  if (detail && detail.id === id) { detail = res.show; renderDetail(); }
   toast(t("t_restored", { n: res.restored }));
   refreshState();
 }
