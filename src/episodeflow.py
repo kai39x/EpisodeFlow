@@ -20,7 +20,7 @@ import urllib.request
 import urllib.error
 from dataclasses import dataclass, field
 
-VERSION = "1.1.2"
+VERSION = "1.2.0"
 REPO_URL = "https://github.com/kai39x/EpisodeFlow"
 USER_AGENT = f"EpisodeFlow/{VERSION}"
 
@@ -42,7 +42,8 @@ def _data_dir() -> str:
 APP_DIR = _app_dir()
 DATA_DIR = _data_dir()
 # Everything EpisodeFlow keeps in DATA_DIR. "Remove from this PC" deletes exactly these.
-DATA_FILES = ["settings.json", "history.json", "history.json.tmp", "anilist_cache.json", "episodeflow_error.log"]
+DATA_FILES = ["settings.json", "history.json", "history.json.tmp", "anilist_cache.json", "anilist_cache.json.tmp",
+              "episodeflow_error.log"]
 DATA_DIRS = ["window-data", "window"]   # pywebview storage, Edge window profile
 
 
@@ -165,6 +166,8 @@ def render_template(tpl: str, show: str, season: int, episode: int, episode_end:
 
 
 TEMPLATE = load_settings().get("template", DEFAULT_TEMPLATE)
+# Library layout: also move each episode into "Season 01" / "Specials" inside the show's folder
+ORGANIZE = load_settings().get("folders") == "season"
 
 VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".m4v", ".ts", ".flv"}
 SUB_EXTS = {".srt", ".ass", ".ssa", ".sub", ".vtt"}
@@ -389,14 +392,14 @@ ANILIST_URL = "https://graphql.anilist.co"
 CACHE_FILE = os.path.join(DATA_DIR, "anilist_cache.json")
 CACHE_DAYS = 7          # finished shows
 CACHE_DAYS_AIRING = 1   # shows still airing change every week
-CACHE_VERSION = 4
+CACHE_VERSION = 5        # 5: airing status and next airing date
 GOOD_FORMATS = {"TV", "ONA"}   # movies, OVAs, specials and shorts are ignored
 
 _MEDIA_FIELDS = """
-  id format episodes synonyms
+  id format status episodes synonyms
   title { romaji english }
   startDate { year month }
-  nextAiringEpisode { episode }
+  nextAiringEpisode { episode airingAt }
   coverImage { extraLarge large }
   relations { edges { relationType node { id type format startDate { year month } } } }
 """
@@ -559,7 +562,9 @@ def label_chain(chain: list[dict]) -> list[dict]:
         nae = m.get("nextAiringEpisode") or {}
         out.append({"title": m["title"].get("english") or m["title"].get("romaji"),
                     "episodes": m.get("episodes"), "season": season, "part": part,
+                    "status": m.get("status"),                  # FINISHED / RELEASING / NOT_YET_RELEASED
                     "aired": (nae["episode"] - 1) if nae.get("episode") else None,
+                    "next": nae.get("episode"), "next_at": nae.get("airingAt"),
                     "cover": ((m.get("coverImage") or {}).get("extraLarge") or (m.get("coverImage") or {}).get("large")),
                     "keys": _title_keys(m, chain[0])})
         prev_season, prev_part = season, part
@@ -663,24 +668,45 @@ class AniListLookup:
             return None
         return sum(e["episodes"] for e in earlier)
 
-    def season_parts(self, season: int):
-        """Episode count of each part of a season, e.g. [13, 12]. None if unknown."""
+    def season_info(self, season: int) -> dict | None:
+        """What AniList knows about a season, None if it can't tell:
+        parts: episode count of each part ([13, 12]), total: all of them,
+        airing: still coming out, aired: how many are out so far (when airing),
+        next: {"episode": number in the season, "at": unix time} of the next one to air."""
         if not self._done:
             self._load()
         if not self.labels:
             return None
-        sizes = []
+        sizes, aired_total, airing, nxt = [], 0, False, None
         for e in sorted((e for e in self.labels if e["season"] == season), key=lambda e: e["part"]):
-            n = e["episodes"] if e["episodes"] is not None else e.get("aired")
-            if n is None:
-                return None
-            sizes.append(n)
-        return sizes or None
+            planned, status = e["episodes"], e.get("status")
+            if status in ("RELEASING", "NOT_YET_RELEASED") or e.get("next"):
+                airing = True
+                aired = e["aired"] if e.get("aired") is not None else (0 if status == "NOT_YET_RELEASED" else planned)
+                if aired is None:
+                    return None
+                if nxt is None and e.get("next"):
+                    nxt = {"episode": sum(sizes) + e["next"], "at": e.get("next_at")}
+                size = planned if planned is not None else aired
+            else:
+                if planned is None:
+                    return None
+                aired = size = planned
+            sizes.append(size)
+            aired_total += aired
+        if not sizes:
+            return None
+        return {"parts": sizes, "total": sum(sizes), "airing": airing,
+                "aired": aired_total if airing else sum(sizes), "next": nxt}
+
+    def season_parts(self, season: int):
+        """Episode count of each part of a season, e.g. [13, 12]. None if unknown."""
+        info = self.season_info(season)
+        return info["parts"] if info else None
 
     def season_airing(self, season: int) -> bool:
-        if not self._done:
-            self._load()
-        return bool(self.labels) and any(e["season"] == season and e["episodes"] is None for e in self.labels)
+        info = self.season_info(season)
+        return bool(info and info["airing"])
 
     def cover(self) -> str | None:
         if not self._done:
@@ -871,6 +897,20 @@ def new_base(r: Result, show: str) -> str:
     return render_template(TEMPLATE, show, r.season, r.episode, r.episode_end)
 
 
+def set_organize(on: bool):
+    """Turn "move episodes into season folders" on or off (saved in settings.json)."""
+    global ORGANIZE
+    ORGANIZE = bool(on)
+    data = load_settings()
+    data["folders"] = "season" if on else "none"
+    save_settings(data)
+
+
+def season_folder_name(r: Result) -> str:
+    """The folder Plex and Jellyfin expect: "Season 01", or "Specials" for Season 0."""
+    return "Specials" if r.special or r.season == 0 else f"Season {r.season:02d}"
+
+
 def set_template(tpl: str):
     """Save a new file name format (raises EFError if it can't work)."""
     global TEMPLATE
@@ -908,8 +948,12 @@ def safe_rename(folder: str, pairs: list[tuple[str, str]]):
     def path(name):
         return os.path.join(folder, name)
 
-    done, current = [], None          # done = (from, to) steps that worked, in order
+    done, current, made = [], None, []    # done = (from, to) steps that worked, in order; made = new folders
     try:
+        for d in sorted({os.path.dirname(new) for _, new in pairs if os.path.dirname(new)}):
+            if not os.path.isdir(path(d)):
+                os.makedirs(path(d))
+                made.append(d)
         temps = []
         for i, (old, new) in enumerate(pairs):
             current = old
@@ -928,6 +972,7 @@ def safe_rename(folder: str, pairs: list[tuple[str, str]]):
                 os.rename(path(dst), path(src))
             except OSError:
                 stuck.append(dst)
+        _remove_empty(folder, made)
         reason = e.strerror or str(e)
         if stuck:
             raise EFError("err_rename_stuck",
@@ -935,6 +980,16 @@ def safe_rename(folder: str, pairs: list[tuple[str, str]]):
                           name=current, stuck=stuck[0]) from e
         raise EFError("err_rename_failed", f"Couldn't rename {current} ({reason}). Nothing was changed. "
                       "If it's open in a video player, close it and try again.", name=current) from e
+    # files moved out of a season folder (undoing "season folders"): remove the folder if it's now empty
+    _remove_empty(folder, [os.path.dirname(old) for old, _ in pairs if os.path.dirname(old)])
+
+
+def _remove_empty(folder: str, dirs: list[str]):
+    for d in sorted(set(dirs), key=len, reverse=True):
+        try:
+            os.rmdir(os.path.join(folder, d))      # only works when the folder is empty
+        except OSError:
+            pass
 
 
 # ---------- History (every rename and every file sent to the Recycle Bin) ----------
@@ -1178,10 +1233,21 @@ def analyze(folder: str, only: list[str] | None = None, post=None, use_cache=Tru
     return plan
 
 
+def organizes(plan: ShowPlan) -> bool:
+    """Season folders are made only in a show's own folder, not inside one that is a season already."""
+    base = os.path.basename(os.path.normpath(plan.folder))
+    return ORGANIZE and not is_specials_folder(plan.folder) and bool(folder_words(base))
+
+
+def _in_folder(plan: ShowPlan, r: Result, name: str) -> str:
+    return os.path.join(season_folder_name(r), name) if organizes(plan) else name
+
+
 def target_name(plan: ShowPlan, r: Result) -> str | None:
+    """New name, relative to the show's folder ("Season 01/Show - S01E05.mkv" with season folders on)."""
     if r.skipped or r.episode is None:
         return None
-    return new_base(r, plan.show) + r.suffix + os.path.splitext(r.original)[1]
+    return _in_folder(plan, r, new_base(r, plan.show) + r.suffix + os.path.splitext(r.original)[1])
 
 
 def plan_pairs(plan: ShowPlan) -> list[tuple[str, str]]:
@@ -1191,7 +1257,7 @@ def plan_pairs(plan: ShowPlan) -> list[tuple[str, str]]:
         if target and target != r.original:
             pairs.append((r.original, target))
             for sub, suffix in matching_subs(plan.folder, r.original, plan.all_files):
-                pairs.append((sub, new_base(r, plan.show) + r.suffix + suffix))
+                pairs.append((sub, _in_folder(plan, r, new_base(r, plan.show) + r.suffix + suffix)))
     return pairs
 
 
@@ -1257,16 +1323,19 @@ def missing_episodes(plan: ShowPlan) -> list[dict]:
     for s in seasons:
         have = sorted({e for r in plan.results
                        if r.season == s and not r.skipped and not r.special for e in episodes_of(r)})
-        parts = plan.lookup.season_parts(s) if plan.lookup else None
-        total = sum(parts) if parts else None
-        if total and max(have) <= total:
-            source = "anilist"
+        info = plan.lookup.season_info(s) if plan.lookup else None
+        if info and max(have) <= info["total"]:
+            source, total, parts = "anilist", info["total"], info["parts"]
+            aired = max(info["aired"], max(have))     # what's out so far (all of it for a finished season)
         else:
-            total, parts, source = max(have), None, "folder"
-        missing = [e for e in range(1, total + 1) if e not in set(have)]
-        airing = bool(plan.lookup and source == "anilist" and plan.lookup.season_airing(s))
-        out.append({"season": s, "have": have, "total": total, "parts": parts,
-                    "missing": missing, "source": source, "airing": airing})
+            info, source, total, parts, aired = None, "folder", max(have), None, max(have)
+        have_set = set(have)
+        missing = [e for e in range(1, aired + 1) if e not in have_set]
+        # still airing: out already, but after the last episode you have (the ones to get next)
+        new = [e for e in missing if e > max(have)] if info and info["airing"] else []
+        out.append({"season": s, "have": have, "total": total, "parts": parts, "aired": aired,
+                    "missing": missing, "new": new, "source": source,
+                    "airing": bool(info and info["airing"]), "next": info["next"] if info else None})
     return out
 
 

@@ -118,8 +118,11 @@ STATE = State()
 # JSON views
 # ======================================================================
 def show_summary(s: Show) -> dict:
-    count = len(ef.plan_pairs(s.plan)) if s.plan and s.status not in ("analyzing", "error") else 0
-    return {"id": s.id, "name": s.name, "status": s.status, "renames": count, "error": s.error}
+    ready = s.plan and s.status not in ("analyzing", "error")
+    count = len(ef.plan_pairs(s.plan)) if ready else 0
+    # episodes that are out on AniList, after the last one you have
+    new = sum(len(x["new"]) for x in ef.missing_episodes(s.plan)) if ready else 0
+    return {"id": s.id, "name": s.name, "status": s.status, "renames": count, "new": new, "error": s.error}
 
 
 def row_view(plan: ef.ShowPlan, i: int, r: ef.Result) -> dict:
@@ -201,8 +204,8 @@ def save_ui_prefs(change: dict) -> dict:
 def settings_view() -> dict:
     s = ef.load_settings()
     return {"template": ef.TEMPLATE, "presets": ef.PRESET_TEMPLATES, "default": ef.DEFAULT_TEMPLATE,
-            "data_dir": ef.DATA_DIR, "mode": app_mode(), "shortcuts": s.get("shortcuts", ""),
-            "version": ef.VERSION, "repo": ef.REPO_URL}
+            "data_dir": ef.DATA_DIR, "mode": app_mode(), "shortcuts": shortcuts_state(s),
+            "folders": ef.ORGANIZE, "version": ef.VERSION, "repo": ef.REPO_URL}
 
 
 def storage_view() -> dict:
@@ -219,7 +222,7 @@ def storage_view() -> dict:
 def state_view() -> dict:
     with STATE.lock:
         return {"root": STATE.root, "busy": STATE.busy, "message": STATE.message, "mode": app_mode(),
-                "shortcuts": ef.load_settings().get("shortcuts", ""),
+                "shortcuts": shortcuts_state(ef.load_settings()),
                 "shows": [show_summary(s) for s in STATE.shows]}
 
 
@@ -289,6 +292,12 @@ def act(path: str, data: dict):
         if os.name == "nt":
             os.startfile(ef.DATA_DIR)
         return {"data_dir": ef.DATA_DIR}
+    if path == "/api/folders":
+        ef.set_organize(bool(data.get("on")))
+        for s in list(STATE.shows):          # new targets -> new statuses
+            if s.plan:
+                s.status = ef.plan_status(s.plan)
+        return {**settings_view(), **state_view()}
     if path == "/api/settings":
         ef.set_template(str(data.get("template", "")))
         for s in list(STATE.shows):          # new names -> new statuses
@@ -369,9 +378,26 @@ def browse_folder() -> str:
 # ======================================================================
 # Portable app: shortcuts and removing the program
 # ======================================================================
+UNINSTALLER = "Uninstall EpisodeFlow.exe"      # written next to the exe by the installer
+
+
 def app_mode() -> str:
-    """'portable' (EpisodeFlow.exe) or 'dev' (running the .py files)."""
-    return "portable" if getattr(sys, "frozen", False) else "dev"
+    """'installed' (from EpisodeFlow-Setup.exe), 'portable' (EpisodeFlow.exe on its own)
+    or 'dev' (running the .py files)."""
+    if not getattr(sys, "frozen", False):
+        return "dev"
+    if os.path.exists(os.path.join(os.path.dirname(sys.executable), UNINSTALLER)):
+        return "installed"
+    return "portable"
+
+
+def shortcuts_state(settings: dict) -> str:
+    """'yes' / 'no' / '' (not asked yet). The installer makes the shortcuts itself, so there
+    the answer is whether they're there."""
+    if app_mode() == "installed":
+        sendto = os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows", "SendTo", "EpisodeFlow.lnk")
+        return "yes" if os.path.exists(sendto) else "no"
+    return settings.get("shortcuts", "")
 
 
 _SHORTCUT_PS = r"""
@@ -390,7 +416,7 @@ foreach ($d in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFold
 
 def portable_shortcuts(mode: str):
     """mode: 'create' (Desktop + Send To), 'fix' (point existing ones at this exe), 'remove'."""
-    if os.name != "nt" or app_mode() != "portable":
+    if os.name != "nt" or app_mode() not in ("portable", "installed"):
         return
     subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _SHORTCUT_PS],
                    env={**os.environ, "EPF_MODE": mode, "EPF_EXE": sys.executable},
@@ -402,7 +428,10 @@ def remove_from_pc():
     Anime files are never touched."""
     mode = app_mode()
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
-    if mode == "portable":
+    if mode == "installed":
+        # the uninstaller asks the questions (and whether to keep your history), then removes everything
+        subprocess.Popen([os.path.join(os.path.dirname(sys.executable), UNINSTALLER)], close_fds=True)
+    elif mode == "portable":
         portable_shortcuts("remove")
         # Delete only EpisodeFlow's own files by name, then the data folder if nothing else is in it.
         # Never a whole folder by path: if the data folder ever pointed somewhere else, nothing else is lost.
@@ -669,6 +698,8 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 log_error()
             return self._send(200, page, "text/html; charset=utf-8")
+        if url.path == "/favicon.ico":          # the browser asks for it on its own, without the token
+            return self._send(204, b"", "image/x-icon")
         if not self._authorized():
             return self._json({"error": "forbidden"}, 403)
         try:

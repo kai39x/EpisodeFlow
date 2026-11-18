@@ -1,0 +1,48 @@
+name: Bug report / مشكلة
+description: Something went wrong or a file got the wrong name. / شي ما اشتغل صح، أو ملف أخذ اسم غلط.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! English or Arabic are both fine.
+        شكراً إنك بلّغت! تقدر تكتب بالعربي أو بالإنجليزي.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened? / وش صار؟
+      description: What you did, what you expected, and what happened instead. / وش سويت، ووش كنت متوقع، ووش اللي صار.
+    validations:
+      required: true
+  - type: textarea
+    id: names
+    attributes:
+      label: File names / أسماء الملفات
+      description: |
+        For a wrong name: the original file name(s), the folder name, and the name EpisodeFlow suggested.
+        لو الاسم غلط: اسم الملف الأصلي، واسم المجلد، والاسم اللي اقترحه البرنامج.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: EpisodeFlow version / رقم الإصدار
+      description: Settings → About. / الإعدادات ثم «عن البرنامج».
+      placeholder: "1.2.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Which download? / أي نسخة؟
+      options:
+        - EpisodeFlow-Setup.exe (installer / مثبّت)
+        - EpisodeFlow.exe (portable / بورتبل)
+        - From the source / من الكود
+  - type: textarea
+    id: log
+    attributes:
+      label: Error log (optional) / سجل الأخطاء (اختياري)
+      description: |
+        Settings → Open data folder → episodeflow_error.log. Check it for anything private before pasting.
+        الإعدادات ثم «افتح مجلد البيانات» ثم episodeflow_error.log. شيّك إن ما فيه شي خاص قبل ما تلصقه.
+      render: text

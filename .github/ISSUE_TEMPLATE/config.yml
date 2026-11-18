@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Download the latest version / حمّل آخر إصدار
+    url: https://github.com/kai39x/EpisodeFlow/releases/latest
+    about: Maybe it's already fixed. / يمكن انحلت المشكلة في آخر إصدار.

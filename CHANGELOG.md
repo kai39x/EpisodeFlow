@@ -1,6 +1,11 @@
 # Changelog
 
-## 1.1.2
+## 1.2.0
+
+New:
+- **New episodes at a glance.** For a show that's still airing, episodes that are out but not in your folder are marked **New**, the ones not out yet are faded, and you see when the next one airs. The list of shows has a badge with the number of new episodes. Episodes that aren't out yet no longer count as missing (before, a 12-episode show airing its 7th week showed episodes 8 to 12 as missing).
+- **Season folders.** Settings → File name format → *Also move episodes into season folders* puts renamed episodes in `Season 01`, `Season 02` and `Specials`, the layout Plex and Jellyfin expect. Undo moves them back and removes the folders it made.
+- **Installer.** `EpisodeFlow-Setup.exe` installs for your user only (no admin), with Start menu, Desktop and Send To shortcuts to pick, and an uninstaller in Windows Settings → Apps that asks whether to keep your history. The portable `EpisodeFlow.exe` is still there. Releases now have `SHA256SUMS.txt` for both.
 
 Fixes:
 - **Season folders.** In `Frieren/Season 1`, `Frieren/Season 2`, files were renamed to `Show - S01E01` because the season folder had no show name in it. The show's name now comes from the folder above, and `Specials` / `Extras` / `Season 0` folders go to Season 0. They're also found when you open the folder above the show. In the list they show as `Frieren · Season 2`.

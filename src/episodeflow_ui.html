@@ -133,7 +133,7 @@ aside { border-inline-end: 1px solid var(--line); display: flex; flex-direction:
 #showList { list-style: none; margin: 0; padding: 0 8px; overflow: auto; flex: 1; }
 #showList li button {
   width: 100%; text-align: start; border: 0; background: transparent; border-radius: 6px;
-  padding: 8px 10px; display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: center;
+  padding: 8px 10px; display: grid; grid-template-columns: 10px 1fr auto auto; gap: 10px; align-items: center;
 }
 #showList li button:hover { background: var(--raise); }
 #showList li button[aria-current="true"] { background: var(--accent-soft); }
@@ -186,6 +186,12 @@ html[dir=rtl] .cells { justify-content: flex-end; flex-direction: row; }
 .cell.flag { background: var(--warn); color: #1b1300; }
 .cell.bad { background: var(--bad); color: #fff; }
 .cell.sp { background: var(--special); color: #1d0f33; }
+.cell.miss.new { border-color: var(--accent); color: var(--accent); border-style: solid; }
+.cell.soon { background: transparent; color: var(--faint); border: 1.5px dotted var(--line-soft); font-weight: 400; opacity: .6; }
+.s-label .new-tag { color: var(--accent); font-weight: 600; font-size: 12px; }
+.s-label .new-tag .fn { display: inline; }
+.new-badge { background: var(--accent); color: var(--on-accent); border-radius: 999px; font-size: 11px; font-weight: 700;
+  min-width: 18px; padding: 0 6px; line-height: 18px; text-align: center; }
 .part-gap { width: 12px; height: 26px; position: relative; }
 .part-gap::after { content: ""; position: absolute; left: 5px; top: 2px; bottom: 2px; width: 2px; border-radius: 1px; background: var(--line); }
 .run-gap { color: var(--faint); font-size: 12px; padding: 0 8px; height: 26px; display: inline-flex; align-items: center; gap: 6px; }
@@ -584,6 +590,9 @@ const WORDS = {
     set_title: "Settings", fmt_title: "File name format", fmt_intro: "How renamed episodes are named. The example uses the show you have open.",
     fmt_custom: "Your own format", fmt_help: "Use {show} for the folder name, {season} and {episode} for 2-digit numbers (S01E05), {s} and {e} for plain numbers (1x5).",
     fmt_noseason: "This format has no season, so episodes from different seasons in one folder will get the same name.",
+    fmt_folders: "Also move episodes into season folders",
+    fmt_folders_hint: "Season 01, Season 02 and Specials inside the show's folder, the way Plex and Jellyfin like it. Undo puts them back.",
+    t_folders_on: "From now on, renamed episodes also go into season folders.", t_folders_off: "Season folders are off: episodes stay where they are.",
     save_settings: "Save", reset_default: "Back to default",
     sc_title: "Shortcuts", sc_label: "EpisodeFlow on the Desktop and in the Send To menu",
     sc_hint: "Send To: right-click any anime folder, then Send to, then EpisodeFlow.",
@@ -595,6 +604,8 @@ const WORDS = {
     about_repo: "Project page on GitHub",
     rm_title: "Remove EpisodeFlow", rm_text_portable: "Removes the shortcuts, your history and settings, and EpisodeFlow.exe itself. Your anime files are never touched, and poster folder icons you set stay (remove them from each show first if you don't want them).",
     rm_text_dev: "You're running the source files, so just delete their folder.",
+    rm_text_installed: "Opens the uninstaller, which removes EpisodeFlow and its shortcuts, and asks whether to keep your history and settings. Your anime files are never touched.",
+    rm_btn_installed: "Uninstall", rm_confirm_installed: "The window closes and the EpisodeFlow uninstaller opens.",
     rm_btn: "Remove from this PC",
     rm_confirm_title: "Remove EpisodeFlow from this PC?", rm_confirm_text: "The window closes and EpisodeFlow removes itself. Renames you already did stay as they are.",
     rm_done: "EpisodeFlow is being removed. You can close this window.",
@@ -627,6 +638,8 @@ const WORDS = {
     season: (v) => `Season ${v.n}`, specials: "Specials",
     have_of: (v) => `${v.have} of ${v.total}`, n_eps: (v) => `${v.n} ${pl(v.n, "episode", "episodes")}`,
     aired_so_far: (v) => `${v.n} aired so far`, in_total: (v) => `${v.n} in total`, still_airing: "Still airing",
+    new_eps: (v) => `New: ${v.list}`, new_badge: (v) => `${v.n} new ${pl(v.n, "episode", "episodes")} out that you don't have`,
+    next_airs: (v) => `E${v.e} airs ${v.when}`, not_aired: "Not out yet",
     no_count: "AniList count unavailable", missing: (v) => `Missing ${v.list}.`, between: (v) => `${v.n} ${pl(v.n, "episode", "episodes")}`,
     n_files: (v) => `${v.n} ${pl(v.n, "file", "files")}`,
     current_file: "Current file", new_name: "New name", not_renamed: "Not renamed",
@@ -702,6 +715,9 @@ const WORDS = {
     set_title: "الإعدادات", fmt_title: "شكل اسم الملف", fmt_intro: "كيف تتسمى الحلقات. المثال من الأنمي المفتوح عندك.",
     fmt_custom: "شكل خاص فيك", fmt_help: "استخدم {show} لاسم المجلد، و{season} و{episode} للأرقام بخانتين (S01E05)، و{s} و{e} للأرقام بدون أصفار (1x5).",
     fmt_noseason: "هذا الشكل ما فيه موسم، فالحلقات من مواسم مختلفة في نفس المجلد بتاخذ نفس الاسم.",
+    fmt_folders: "وانقل الحلقات لمجلدات المواسم بعد",
+    fmt_folders_hint: "Season 01 و Season 02 و Specials داخل مجلد الأنمي، بالطريقة اللي يحبها Plex و Jellyfin. والتراجع يرجّعها مكانها.",
+    t_folders_on: "من الحين، الحلقات اللي تتسمى تنتقل لمجلدات المواسم بعد.", t_folders_off: "مجلدات المواسم طافية: الحلقات تبقى مكانها.",
     save_settings: "حفظ", reset_default: "رجّع الافتراضي",
     sc_title: "الاختصارات", sc_label: "EpisodeFlow على سطح المكتب وفي قائمة Send To",
     sc_hint: "Send To: كليك يمين على أي مجلد أنمي، ثم Send to، ثم EpisodeFlow.",
@@ -713,6 +729,8 @@ const WORDS = {
     about_repo: "صفحة المشروع على GitHub",
     rm_title: "إزالة EpisodeFlow", rm_text_portable: "يشيل الاختصارات، وسجلك وإعداداتك، وملف EpisodeFlow.exe نفسه. ملفات الأنمي ما تنلمس أبداً، وأيقونات البوستر اللي حطيتها للمجلدات تبقى (شيلها من كل أنمي قبل لو ما تبيها).",
     rm_text_dev: "أنت مشغّل ملفات الكود، فاحذف مجلدها بس.",
+    rm_text_installed: "يفتح برنامج الإزالة، اللي يشيل EpisodeFlow واختصاراته، ويسألك تبي تخلي سجلك وإعداداتك أو لا. ملفات الأنمي ما تنلمس أبداً.",
+    rm_btn_installed: "إزالة التثبيت", rm_confirm_installed: "النافذة بتتسكّر وبيفتح برنامج إزالة EpisodeFlow.",
     rm_btn: "إزالة من الجهاز",
     rm_confirm_title: "تبي تزيل EpisodeFlow من الجهاز؟", rm_confirm_text: "النافذة بتتسكّر والبرنامج يشيل نفسه. والتسميات اللي سويتها تبقى زي ما هي.",
     rm_done: "جاري إزالة EpisodeFlow. تقدر تسكّر هالنافذة.",
@@ -745,6 +763,8 @@ const WORDS = {
     season: (v) => `الموسم ${v.n}`, specials: "الحلقات الخاصة",
     have_of: (v) => `${v.have} من ${v.total}`, n_eps: (v) => `${v.n} حلقة`,
     aired_so_far: (v) => `نزل منه ${v.n}`, in_total: (v) => `${v.n} حلقة بالكامل`, still_airing: "لسه ينعرض",
+    new_eps: (v) => `جديد: ${v.list}`, new_badge: (v) => `${v.n} حلقة نزلت وما عندك`,
+    next_airs: (v) => `الحلقة ${v.e} تنزل ${v.when}`, not_aired: "ما نزلت للحين",
     no_count: "عدد AniList غير متوفر", missing: (v) => `ناقص: ${v.list}`, between: (v) => `${v.n} حلقة`,
     n_files: (v) => `${v.n} ملف`,
     current_file: "الاسم الحالي", new_name: "الاسم الجديد", not_renamed: "ما راح يتغير",
@@ -873,6 +893,7 @@ function renderSidebar() {
   $("#showList").innerHTML = state.shows.map((s) => `
     <li class="st-${s.status}"><button data-id="${s.id}" aria-current="${view === "show" && s.id === selected}">
       <span class="dot"></span><span class="show-name fn" title="${esc(s.name)}">${esc(s.name)}</span>
+      ${s.new ? `<span class="new-badge" title="${t("new_badge", { n: s.new })}">${s.new}</span>` : "<span></span>"}
       <span class="show-state">${t("st_" + s.status)}</span></button></li>`).join("");
   const ready = state.shows.filter((s) => s.status === "ready");
   const files = ready.reduce((a, s) => a + s.renames, 0);
@@ -922,9 +943,16 @@ function ranges(list) {
     out.push(j > i ? `E${pad(list[i])}–${pad(list[j])}` : `E${pad(list[i])}`); i = j + 1; }
   return `<span class="fn">${out.join(", ")}</span>`;
 }
-function cell(season, e, have, flag) {
-  const cls = have ? `have${flag === "review" ? " flag" : flag === "conflict" ? " bad" : ""}` : "miss";
-  return `<span class="cell ${cls}" data-s="${season}" data-e="${e}" title="E${pad(e)}">${e}</span>`;
+function cell(season, e, have, flag, state) {
+  // state: "new" = out, after your last episode; "soon" = not out yet
+  const cls = have ? `have${flag === "review" ? " flag" : flag === "conflict" ? " bad" : ""}`
+    : state === "soon" ? "soon" : `miss${state === "new" ? " new" : ""}`;
+  const tip = state === "soon" ? ` · ${t("not_aired")}` : "";
+  return `<span class="cell ${cls}" data-s="${season}" data-e="${e}" title="E${pad(e)}${tip}">${e}</span>`;
+}
+function airDate(at) {
+  const loc = LANG === "ar" ? "ar-u-nu-latn" : "en";
+  return new Date(at * 1000).toLocaleDateString(loc, { weekday: "long", day: "numeric", month: "short" });
 }
 
 function renderTape(d) {
@@ -946,15 +974,20 @@ function renderTape(d) {
     } else {
       const ends = []; let acc = 0;
       if (s.parts && s.parts.length > 1) for (const p of s.parts.slice(0, -1)) { acc += p; ends.push(acc); }
+      const fresh = new Set(s.new || []);
       for (let e = 1; e <= s.total; e++) {
-        cells += cell(s.season, e, have.has(e), flagged.get(`${s.season}-${e}`));
+        const state = e > (s.aired ?? s.total) ? "soon" : fresh.has(e) ? "new" : "";
+        cells += cell(s.season, e, have.has(e), flagged.get(`${s.season}-${e}`), state);
         if (ends.includes(e)) cells += `<span class="part-gap"></span>`;
       }
       missing = s.missing;
       const extra = s.source !== "anilist" ? `<span class="src">${t("no_count")}</span>` : (s.airing ? `<span class="src">${t("still_airing")}</span>` : "");
       label = `<b>${seasonName(s.season)}</b><span>${t("have_of", { have: s.have.length, total: s.total })}</span>${extra}`;
     }
-    const missText = missing.length ? `<p class="miss-text">${t("missing", { list: ranges(missing) })}</p>` : "";
+    if (s.new && s.new.length) label += `<span class="new-tag">${t("new_eps", { list: ranges(s.new) })}</span>`;
+    if (s.next && s.next.at) label += `<span class="src">${t("next_airs", { e: s.next.episode, when: airDate(s.next.at) })}</span>`;
+    const older = missing.filter((e) => !(s.new || []).includes(e));   // the new ones are listed beside the season
+    const missText = older.length ? `<p class="miss-text">${t("missing", { list: ranges(older) })}</p>` : "";
     const ss = (d.storage.seasons.find((x) => x.season === s.season) || {}).bytes;
     if (ss) label += `<span class="src fn">${fmtSize(ss)}</span>`;
     return `<div class="season"><div class="s-label">${label}</div><div><div class="cells">${cells}</div>${missText}</div></div>`;
@@ -1144,6 +1177,8 @@ async function showSettings() {
         <span class="code fn" id="tplExample"></span></span></label>
       <p class="tpl-help">${esc(t("fmt_help"))}</p>
       <p class="tpl-warn" id="tplWarn"></p>
+      <div class="look-row"><label class="switch"><input type="checkbox" id="foldersPick" ${s.folders ? "checked" : ""}><span class="track"></span>
+        <span>${t("fmt_folders")}<small>${t("fmt_folders_hint")}</small></span></label></div>
       <div class="set-actions"><button class="ghost" id="tplReset">${t("reset_default")}</button><button class="primary" id="tplSave">${t("save_settings")}</button></div>
     </section>
     <section class="set-block">
@@ -1152,10 +1187,15 @@ async function showSettings() {
       <div class="set-actions" style="justify-content:flex-start"><button class="small" id="openData">${t("open_data")}</button></div>
     </section><div class="spacer"></div></div>`;
   $("#openData").onclick = () => api("/api/open_data", {});
+  $("#foldersPick").onchange = async (e) => {
+    const res = await api("/api/folders", { on: e.target.checked });
+    if (res.error) { toast(errText(res)); return; }
+    toast(t(e.target.checked ? "t_folders_on" : "t_folders_off")); detail = null;
+  };
   bindLook();
   const extra = document.createElement("div");
   extra.innerHTML = `
-    ${s.mode === "portable" ? `<section class="set-block"><h2>${t("sc_title")}</h2>
+    ${s.mode === "portable" || s.mode === "installed" ? `<section class="set-block"><h2>${t("sc_title")}</h2>
       <div class="set-row"><label><input type="checkbox" id="scToggle" ${s.shortcuts === "yes" ? "checked" : ""}> ${t("sc_label")}</label></div>
       <p class="hint" style="margin:8px 0 0">${t("sc_hint")}</p></section>` : ""}
     <section class="set-block"><h2>${t("about_title")}</h2>
@@ -1164,17 +1204,18 @@ async function showSettings() {
       ${s.repo ? `<p class="credits"><a class="link" data-url="${esc(s.repo)}">${t("about_repo")}</a></p>` : ""}
     </section>
     <section class="set-block"><h2>${t("rm_title")}</h2>
-      <p>${t(s.mode === "portable" ? "rm_text_portable" : "rm_text_dev")}</p>
-      ${s.mode === "portable" ? `<div class="set-actions" style="justify-content:flex-start"><button class="small danger-text" id="rmBtn">${t("rm_btn")}</button></div>` : ""}
+      <p>${t(s.mode === "installed" ? "rm_text_installed" : s.mode === "portable" ? "rm_text_portable" : "rm_text_dev")}</p>
+      ${s.mode !== "dev" ? `<div class="set-actions" style="justify-content:flex-start"><button class="small danger-text" id="rmBtn">${t(s.mode === "installed" ? "rm_btn_installed" : "rm_btn")}</button></div>` : ""}
     </section>`;
   $(".wrap").insertBefore(extra, $(".wrap .spacer"));
   if ($("#scToggle")) $("#scToggle").onchange = (e) => api("/api/shortcuts", { on: e.target.checked, remove: !e.target.checked });
   extra.querySelectorAll("[data-url]").forEach((a) => (a.onclick = () => api("/api/open_url", { url: a.dataset.url })));
   if ($("#rmBtn")) $("#rmBtn").onclick = () => {
     $("#cTitle").textContent = t("rm_confirm_title");
-    $("#cText").textContent = t("rm_confirm_text");
-    $("#cFiles").innerHTML = `<li>${esc(t("rm_text_portable"))}</li>`;
-    $("#cYes").textContent = t("rm_btn"); $("#cHint").hidden = true;
+    const inst = s.mode === "installed";
+    $("#cText").textContent = t(inst ? "rm_confirm_installed" : "rm_confirm_text");
+    $("#cFiles").innerHTML = `<li>${esc(t(inst ? "rm_text_installed" : "rm_text_portable"))}</li>`;
+    $("#cYes").textContent = t(inst ? "rm_btn_installed" : "rm_btn"); $("#cHint").hidden = true;
     $("#confirm").showModal();
     $("#cYes").onclick = async () => {
       $("#confirm").close();

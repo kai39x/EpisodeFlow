@@ -2,7 +2,8 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 title EpisodeFlow - build
-rem Builds release\EpisodeFlow.exe. The build tools go into a .venv folder here,
+rem Builds release\EpisodeFlow.exe, and release\EpisodeFlow-Setup.exe when NSIS is installed.
+rem The build tools go into a .venv folder here,
 rem not into your own Python.
 rem   build.bat            build, then wait for a key
 rem   build.bat nopause    build and exit (GitHub Actions uses this)
@@ -28,11 +29,11 @@ for /f "delims=" %%v in ('%VPY% -c "import re;s=open('src/episodeflow.py',encodi
 echo Building EpisodeFlow %VER%
 echo.
 
-echo [1/3] Build tools from requirements-build.txt (needs internet the first time)...
+echo [1/4] Build tools from requirements-build.txt (needs internet the first time)...
 %VPY% -m pip install --quiet --disable-pip-version-check -r requirements-build.txt
 if errorlevel 1 goto failed
 
-echo [2/3] Building release\EpisodeFlow.exe ...
+echo [2/4] Building release\EpisodeFlow.exe ...
 if not exist "release" mkdir "release"
 %VPY% -m PyInstaller --noconfirm --clean --log-level ERROR --onefile --windowed --name EpisodeFlow ^
   --distpath "%~dp0release" --workpath "%~dp0build" --specpath "%~dp0build" ^
@@ -40,11 +41,24 @@ if not exist "release" mkdir "release"
   "%~dp0src\episodeflow_gui.py"
 if errorlevel 1 goto failed
 
-echo [3/3] Cleaning up...
+echo [3/4] Cleaning up...
 rmdir /s /q "%~dp0build" >nul 2>nul
+
+echo [4/4] Installer (release\EpisodeFlow-Setup.exe)...
+set "NSIS="
+where makensis >nul 2>nul && set "NSIS=makensis"
+if not defined NSIS if exist "%ProgramFiles(x86)%\NSIS\makensis.exe" set "NSIS=%ProgramFiles(x86)%\NSIS\makensis.exe"
+if not defined NSIS if exist "%ProgramFiles%\NSIS\makensis.exe" set "NSIS=%ProgramFiles%\NSIS\makensis.exe"
+if defined NSIS (
+  "%NSIS%" /V2 /DVERSION=%VER% "%~dp0installer\EpisodeFlow.nsi"
+  if errorlevel 1 goto failed
+) else (
+  echo     NSIS isn't installed, so only the portable EpisodeFlow.exe was made. Get it from https://nsis.sourceforge.io
+)
 
 echo.
 echo Done: release\EpisodeFlow.exe
+if defined NSIS echo       release\EpisodeFlow-Setup.exe
 echo.
 if not defined NOPAUSE pause
 exit /b 0

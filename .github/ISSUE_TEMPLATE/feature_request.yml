@@ -1,0 +1,17 @@
+name: Idea / فكرة
+description: Something EpisodeFlow could do. / شي ودّك البرنامج يسويه.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea / فكرتك
+      description: What would you like EpisodeFlow to do, and when would it help you? / وش تبي البرنامج يسوي، ومتى بيفيدك؟
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Example (optional) / مثال (اختياري)
+      description: File or folder names that show what you mean. / أسماء ملفات أو مجلدات توضح قصدك.
+      render: text
