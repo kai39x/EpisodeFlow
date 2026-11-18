@@ -61,7 +61,7 @@ jobs:
           $lines | Set-Content -Encoding ascii release/SHA256SUMS.txt
           "SHA256" >> $env:GITHUB_STEP_SUMMARY
           $lines | ForEach-Object { "- $_" } >> $env:GITHUB_STEP_SUMMARY
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: EpisodeFlow-${{ github.sha }}
           path: |
